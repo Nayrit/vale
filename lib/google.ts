@@ -12,6 +12,7 @@ declare global {
             client_id: string;
             scope: string;
             callback: (res: { access_token?: string; error?: string; error_description?: string }) => void;
+            error_callback?: (err: { type?: string; message?: string }) => void;
           }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
         };
       };
@@ -26,17 +27,33 @@ export function loadGoogleIdentity() {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
   if (gisPromise) return gisPromise;
   gisPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${GIS_SRC}"]`);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      if (!window.google?.accounts?.oauth2) return;
+      settled = true;
+      resolve();
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      gisPromise = null;
+      reject(new Error("Google failed to load. Check your network, then try again."));
+    };
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SRC}"]`);
     if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Google failed to load")));
+      existing.addEventListener("load", finish);
+      existing.addEventListener("error", fail);
+      if (window.google?.accounts?.oauth2) finish();
+      else window.setTimeout(fail, 15_000);
       return;
     }
     const script = document.createElement("script");
     script.src = GIS_SRC;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Google failed to load"));
+    script.onload = finish;
+    script.onerror = fail;
+    window.setTimeout(fail, 15_000);
     document.head.appendChild(script);
   });
   return gisPromise;
@@ -50,12 +67,35 @@ export function requestGoogleAccessToken(clientId: string, scope: string, prompt
           reject(new Error("Google SDK missing"));
           return;
         }
+        let settled = false;
+        const done = (fn: () => void) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          fn();
+        };
+        const timer = window.setTimeout(() => {
+          done(() =>
+            reject(
+              new Error(
+                "Google did not finish. Allow popups for this site, use http://localhost:3000, and check for a hidden Google window.",
+              ),
+            ),
+          );
+        }, 25_000);
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope,
           callback: (res) => {
-            if (res.access_token) resolve(res.access_token);
-            else reject(new Error(res.error_description || res.error || "Google sign-in was cancelled."));
+            if (res.access_token) done(() => resolve(res.access_token));
+            else done(() => reject(new Error(res.error_description || res.error || "Google sign-in was cancelled.")));
+          },
+          error_callback: (err) => {
+            const type = err.type || "";
+            if (type === "popup_closed") done(() => reject(new Error("Google window was closed before finishing.")));
+            else if (type === "popup_failed_to_open")
+              done(() => reject(new Error("The Google popup was blocked. Allow popups, then try again.")));
+            else done(() => reject(new Error(err.message || "Google sign-in failed.")));
           },
         });
         client.requestAccessToken(prompt ? { prompt } : {});
@@ -67,14 +107,14 @@ export async function googleUserInfo(accessToken: string) {
   const info = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!info.ok) throw new Error("profile");
+  if (!info.ok) throw new Error("Google would not return your profile.");
   const profile = (await info.json()) as {
     sub?: string;
     email?: string;
     name?: string;
     picture?: string;
   };
-  if (!profile.sub || !profile.email) throw new Error("profile");
+  if (!profile.sub || !profile.email) throw new Error("Google would not return your profile.");
   return {
     googleId: profile.sub,
     email: profile.email,

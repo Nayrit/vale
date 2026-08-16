@@ -8,11 +8,13 @@ const instrument = Instrument_Serif({
   weight: "400",
   style: ["normal", "italic"],
   variable: "--font-display",
+  display: "swap",
 });
 
 const ui = Outfit({
   subsets: ["latin"],
   variable: "--font-ui",
+  display: "swap",
 });
 
 export const metadata: Metadata = {

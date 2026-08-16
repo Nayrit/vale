@@ -4,7 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -133,11 +135,10 @@ function applyImport(s: AppState, matches: StatementMatch[]) {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const ready = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(true);
+  }, []);
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const patch = useCallback((fn: (s: AppState) => AppState) => {

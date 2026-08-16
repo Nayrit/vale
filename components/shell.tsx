@@ -45,12 +45,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (!auth.ready) return;
     if (!auth.user && !isAuthRoute) router.replace("/login");
     if (auth.user && isAuthRoute) {
-      const ledgerReady =
-        state.profile?.email.trim().toLowerCase() === auth.user.email.trim().toLowerCase();
-      if (!ledgerReady) return;
       router.replace(state.inboxPrompt === "pending" ? "/inbox" : "/");
     }
-  }, [auth.ready, auth.user, isAuthRoute, router, state.profile?.email, state.inboxPrompt]);
+  }, [auth.ready, auth.user, isAuthRoute, router, state.inboxPrompt]);
 
   if (!ready || !auth.ready) {
     return (
@@ -61,20 +58,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthRoute) {
-    if (auth.user) {
-      return (
-        <div className="relative z-10 grid min-h-screen place-items-center">
-          <p className="serif text-3xl italic text-[#1a1713]">Vale</p>
-        </div>
-      );
-    }
     return <>{children}</>;
   }
 
   if (!auth.user) {
     return (
-      <div className="relative z-10 grid min-h-screen place-items-center">
-        <p className="serif text-3xl italic text-[#1a1713]">Vale</p>
+      <div className="relative z-10 grid min-h-screen place-items-center px-6">
+        <div className="text-center">
+          <p className="serif text-3xl italic text-[#1a1713]">Vale</p>
+          <a href="/login" className="mt-6 inline-block text-[15px] font-medium text-[#1a1713] underline-offset-4 hover:underline">
+            Sign in
+          </a>
+        </div>
       </div>
     );
   }
