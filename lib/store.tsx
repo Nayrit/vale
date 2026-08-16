@@ -10,7 +10,6 @@ import {
 } from "react";
 import { getMerchant } from "./catalog";
 import { daysFromNowIso, daysSince } from "./dates";
-import { demoSavings, demoSubscriptions } from "./demo";
 import { monthlyOf } from "./money";
 import type {
   AppState,
@@ -24,7 +23,6 @@ import type {
 const KEY_PREFIX = "vale-ledger-v3:";
 
 const empty: AppState = {
-  onboarded: false,
   profile: null,
   plan: "free",
   unusedDays: 60,
@@ -37,8 +35,6 @@ type Store = {
   state: AppState;
   switchUser: (userId: string, profile: Profile) => void;
   unloadUser: () => void;
-  startDemo: () => void;
-  startEmpty: () => void;
   addSubscription: (input: {
     merchantId?: string | null;
     name: string;
@@ -149,25 +145,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeUserId = null;
     memory = empty;
     emit();
-  }, []);
-
-  const startDemo = useCallback(() => {
-    write({
-      onboarded: true,
-      profile: memory.profile,
-      plan: "free",
-      unusedDays: 60,
-      subscriptions: demoSubscriptions(),
-      savings: demoSavings(),
-    });
-  }, []);
-
-  const startEmpty = useCallback(() => {
-    write({
-      ...empty,
-      onboarded: true,
-      profile: memory.profile,
-    });
   }, []);
 
   const addSubscription: Store["addSubscription"] = useCallback((input) => {
@@ -286,8 +263,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       state: ready ? state : empty,
       switchUser,
       unloadUser,
-      startDemo,
-      startEmpty,
       addSubscription,
       updateSubscription,
       removeSubscription,
@@ -304,8 +279,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       state,
       switchUser,
       unloadUser,
-      startDemo,
-      startEmpty,
       addSubscription,
       updateSubscription,
       removeSubscription,

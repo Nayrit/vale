@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
-import { Onboarding } from "@/components/onboarding";
 import { useStore } from "@/lib/store";
 
 const links = [
@@ -19,7 +18,7 @@ const links = [
 const AUTH_ROUTES = new Set(["/login", "/signup", "/forgot"]);
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { ready, state } = useStore();
+  const { ready } = useStore();
   const auth = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -73,8 +72,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (!state.onboarded) return <Onboarding />;
 
   const initial = (auth.user.name || "You").trim().slice(0, 1).toUpperCase();
 

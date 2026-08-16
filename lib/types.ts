@@ -68,7 +68,6 @@ export type Profile = {
 };
 
 export type AppState = {
-  onboarded: boolean;
   profile: Profile | null;
   plan: Plan;
   unusedDays: number;
