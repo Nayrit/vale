@@ -21,7 +21,7 @@ import type {
   Subscription,
 } from "./types";
 
-const KEY = "vale-v2";
+const KEY_PREFIX = "vale-ledger-v3:";
 
 const empty: AppState = {
   onboarded: false,
@@ -35,8 +35,10 @@ const empty: AppState = {
 type Store = {
   ready: boolean;
   state: AppState;
-  startDemo: (profile: Profile) => void;
-  startEmpty: (profile: Profile) => void;
+  switchUser: (userId: string, profile: Profile) => void;
+  unloadUser: () => void;
+  startDemo: () => void;
+  startEmpty: () => void;
   addSubscription: (input: {
     merchantId?: string | null;
     name: string;
@@ -65,40 +67,26 @@ function uid() {
 
 const listeners = new Set<() => void>();
 let memory: AppState = empty;
-let diskRead = false;
+let activeUserId: string | null = null;
 
 function emit() {
   listeners.forEach((listener) => listener());
 }
 
-function readDisk() {
-  if (diskRead || typeof window === "undefined") return;
-  diskRead = true;
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) memory = { ...empty, ...JSON.parse(raw) };
-  } catch {
-    memory = empty;
-  }
-}
-
 function write(next: AppState) {
   memory = next;
-  if (typeof window !== "undefined") {
-    if (next === empty) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify(next));
+  if (typeof window !== "undefined" && activeUserId) {
+    localStorage.setItem(KEY_PREFIX + activeUserId, JSON.stringify(next));
   }
   emit();
 }
 
 function subscribe(listener: () => void) {
-  readDisk();
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
 function getSnapshot() {
-  readDisk();
   return memory;
 }
 
@@ -146,10 +134,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     write(fn(memory));
   }, []);
 
-  const startDemo = useCallback((profile: Profile) => {
+  const switchUser = useCallback((userId: string, profile: Profile) => {
+    activeUserId = userId;
+    try {
+      const raw = localStorage.getItem(KEY_PREFIX + userId);
+      memory = raw ? { ...empty, ...JSON.parse(raw), profile } : { ...empty, profile };
+    } catch {
+      memory = { ...empty, profile };
+    }
+    write(memory);
+  }, []);
+
+  const unloadUser = useCallback(() => {
+    activeUserId = null;
+    memory = empty;
+    emit();
+  }, []);
+
+  const startDemo = useCallback(() => {
     write({
       onboarded: true,
-      profile,
+      profile: memory.profile,
       plan: "free",
       unusedDays: 60,
       subscriptions: demoSubscriptions(),
@@ -157,8 +162,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const startEmpty = useCallback((profile: Profile) => {
-    write({ ...empty, onboarded: true, profile });
+  const startEmpty = useCallback(() => {
+    write({
+      ...empty,
+      onboarded: true,
+      profile: memory.profile,
+    });
   }, []);
 
   const addSubscription: Store["addSubscription"] = useCallback((input) => {
@@ -267,14 +276,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const reset = useCallback(() => {
-    diskRead = true;
-    write({ ...empty });
+    if (activeUserId) localStorage.removeItem(KEY_PREFIX + activeUserId);
+    write({ ...empty, profile: memory.profile });
   }, []);
 
   const value = useMemo<Store>(
     () => ({
       ready,
       state: ready ? state : empty,
+      switchUser,
+      unloadUser,
       startDemo,
       startEmpty,
       addSubscription,
@@ -291,6 +302,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [
       ready,
       state,
+      switchUser,
+      unloadUser,
       startDemo,
       startEmpty,
       addSubscription,

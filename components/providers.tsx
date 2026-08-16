@@ -1,13 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { StoreProvider } from "@/lib/store";
+import { AuthProvider } from "@/components/auth-provider";
 import { Shell } from "./shell";
+import { StoreProvider } from "@/lib/store";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <StoreProvider>
-      <Shell>{children}</Shell>
+      <AuthProvider>
+        <Shell>{children}</Shell>
+      </AuthProvider>
     </StoreProvider>
   );
 }
