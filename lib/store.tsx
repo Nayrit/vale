@@ -16,14 +16,16 @@ import type {
   AppState,
   BillingCycle,
   Plan,
+  Profile,
   StatementMatch,
   Subscription,
 } from "./types";
 
-const KEY = "vale-v1";
+const KEY = "vale-v2";
 
 const empty: AppState = {
   onboarded: false,
+  profile: null,
   plan: "free",
   unusedDays: 60,
   subscriptions: [],
@@ -33,8 +35,8 @@ const empty: AppState = {
 type Store = {
   ready: boolean;
   state: AppState;
-  startDemo: () => void;
-  startEmpty: () => void;
+  startDemo: (profile: Profile) => void;
+  startEmpty: (profile: Profile) => void;
   addSubscription: (input: {
     merchantId?: string | null;
     name: string;
@@ -144,9 +146,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     write(fn(memory));
   }, []);
 
-  const startDemo = useCallback(() => {
+  const startDemo = useCallback((profile: Profile) => {
     write({
       onboarded: true,
+      profile,
       plan: "free",
       unusedDays: 60,
       subscriptions: demoSubscriptions(),
@@ -154,8 +157,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const startEmpty = useCallback(() => {
-    write({ ...empty, onboarded: true });
+  const startEmpty = useCallback((profile: Profile) => {
+    write({ ...empty, onboarded: true, profile });
   }, []);
 
   const addSubscription: Store["addSubscription"] = useCallback((input) => {

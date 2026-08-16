@@ -9,7 +9,7 @@
   --color-ink: #1a1713;
   --color-ink-soft: #5e584f;
   --color-ink-faint: #9a9286;
-  --color-muted: #6a6458;
+  --color-muted: #3d3830;
   --color-moss: #2f4a3c;
   --color-moss-2: #4a6b58;
   --color-clay: #c45c3a;
@@ -33,9 +33,8 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 80;
-  opacity: 0.045;
-  mix-blend-mode: multiply;
+  z-index: 0;
+  opacity: 0.03;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -44,13 +43,19 @@ body::before {
   color: var(--color-paper);
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+@layer base {
+  a {
+    text-decoration: none;
+  }
+
+  button {
+    cursor: pointer;
+  }
 }
 
-button {
-  cursor: pointer;
+a.vale-solid,
+button.vale-solid {
+  color: #ffffff;
 }
 
 .serif {
@@ -306,15 +311,15 @@ button {
 
 .btn-primary {
   background: var(--color-moss);
-  color: var(--color-paper);
+  color: #ffffff;
 }
 .btn-ink {
   background: var(--color-ink);
-  color: var(--color-paper);
+  color: #ffffff;
 }
 .btn-clay {
   background: var(--color-clay);
-  color: #fff8f3;
+  color: #ffffff;
 }
 .btn-ghost {
   background: transparent;

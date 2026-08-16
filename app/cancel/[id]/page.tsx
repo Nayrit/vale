@@ -75,8 +75,8 @@ export default function CancelPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Link href={`/subscriptions/${sub.id}`} className="text-sm text-muted">
-        ← {sub.name}
+      <Link href={`/subscriptions/${sub.id}`} className="mb-6 flex items-center gap-2 text-[15px] font-medium text-[#1a1713]">
+        <span aria-hidden>←</span> {sub.name}
       </Link>
       <div className="mt-6 flex items-start gap-4">
         <MerchantMark merchantId={sub.merchantId} name={sub.name} size="lg" />
@@ -98,7 +98,7 @@ export default function CancelPage() {
             type="button"
             onClick={() => setStep(i)}
             className={`rounded-full px-4 py-1.5 text-xs uppercase tracking-[0.16em] ${
-              step === i ? "bg-ink text-cream" : "bg-cream text-muted ring-1 ring-ink/8"
+            step === i ? "bg-[#1a1713] text-white" : "bg-white text-[#1a1713] ring-1 ring-[#1a1713]/20"
             }`}
           >
             {label}
@@ -138,10 +138,10 @@ export default function CancelPage() {
             The bank printed <span className="font-mono text-ink">{sub.bankDescriptor || sub.name}</span>. The
             portal is below.
           </p>
-          <div className="mt-6 rounded-[1.8rem] bg-moss px-6 py-8 text-cream">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-cream/70">Open this, not the app</p>
+          <div className="mt-6 rounded-[1.8rem] bg-[#2f4a3c] px-6 py-8 text-white">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">Open this, not the app</p>
             <p className="serif mt-3 text-3xl italic">{merchant?.name ?? sub.name}</p>
-            <p className="mt-2 break-all text-sm text-cream/70">
+            <p className="mt-2 break-all text-sm text-white/80">
               {merchant?.cancelUrl ?? "Search the official account page"}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
@@ -151,7 +151,7 @@ export default function CancelPage() {
                 </Button>
               ) : null}
               {merchant && merchant.manageUrl !== merchant.cancelUrl ? (
-                <Button href={merchant.manageUrl} kind="ghost" className="text-cream ring-cream/30">
+                <Button href={merchant.manageUrl} kind="cream">
                   Manage account
                 </Button>
               ) : null}
@@ -185,7 +185,7 @@ export default function CancelPage() {
                     <div className="flex gap-4">
                       <span
                         className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${
-                          on ? "bg-moss text-cream" : "ring-1 ring-ink/20"
+                          on ? "bg-[#1a1713] text-white" : "ring-1 ring-[#1a1713]/30"
                         }`}
                       >
                         {on ? "✓" : i + 1}

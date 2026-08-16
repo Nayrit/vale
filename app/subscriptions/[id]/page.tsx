@@ -32,7 +32,7 @@ export default function SubscriptionPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <p className="text-[11px] uppercase tracking-[0.24em] text-muted">Charge</p>
+      <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Charge</p>
       <div className="mt-6 flex flex-wrap items-start gap-5">
         <MerchantMark merchantId={sub.merchantId} name={sub.name} size="lg" />
         <div className="min-w-0 flex-1">

@@ -62,8 +62,14 @@ export type SavingsEvent = {
   cancelledAt: string;
 };
 
+export type Profile = {
+  name: string;
+  email: string;
+};
+
 export type AppState = {
   onboarded: boolean;
+  profile: Profile | null;
   plan: Plan;
   unusedDays: number;
   subscriptions: Subscription[];

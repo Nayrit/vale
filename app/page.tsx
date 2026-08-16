@@ -93,8 +93,8 @@ export default function HomePage() {
       {active.length === 0 ? (
         <div className="mt-16 rounded-[2rem] bg-cream/70 p-10 text-center ring-1 ring-ink/8">
           <p className="serif text-4xl italic">A quiet ledger</p>
-          <p className="mx-auto mt-4 max-w-md text-muted">
-            Paste a statement and Vale will match the ugly bank names to the actual cancel pages.
+          <p className="mx-auto mt-4 max-w-md text-[#3d3830]">
+            Vale does not read your email. Paste a bank statement, or add a charge by hand.
           </p>
           <div className="mt-8 flex justify-center gap-3">
             <Button href="/import">Paste a statement</Button>

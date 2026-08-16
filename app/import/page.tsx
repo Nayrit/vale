@@ -34,8 +34,8 @@ export default function ImportPage() {
         Paste the ugly names.
         <span className="mt-2 block italic text-moss">Vale finds the portal.</span>
       </h1>
-      <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">
-        Statements say NETFLIX.COM and APPLE.COM/BILL. They never say “cancel here.” Paste lines from a CSV or a copied statement.
+      <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#3d3830]">
+        This is not email. Copy lines from a downloaded CSV or a bank page — names like NETFLIX.COM — and Vale matches them to the cancel portal.
       </p>
 
       <textarea

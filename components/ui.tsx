@@ -10,6 +10,26 @@ export function toast(message: string) {
   window.dispatchEvent(new CustomEvent("vale-toast", { detail: message }));
 }
 
+export function BackLink({
+  href = "/",
+  label = "Home",
+}: {
+  href?: string;
+  label?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="mb-8 inline-flex items-center gap-2 text-[15px] font-medium text-[#1a1713]"
+    >
+      <span aria-hidden className="text-lg leading-none">
+        ←
+      </span>
+      {label}
+    </Link>
+  );
+}
+
 export function Mark({
   name,
   color,
@@ -24,8 +44,8 @@ export function Mark({
   const dim = size === "lg" ? "h-14 w-14 text-2xl" : size === "sm" ? "h-9 w-9 text-sm" : "h-11 w-11 text-base";
   return (
     <span
-      className={`serif grid shrink-0 place-items-center rounded-full text-cream ${dim}`}
-      style={{ background: color || "#2C4A3C" }}
+      className={`serif grid shrink-0 place-items-center rounded-full ${dim}`}
+      style={{ background: color || "#2C4A3C", color: "#ffffff" }}
       aria-hidden
     >
       {letter || name.slice(0, 1)}
@@ -74,28 +94,29 @@ export function Button({
   disabled?: boolean;
 }) {
   const styles = {
-    ink: "bg-moss text-cream hover:bg-moss-2",
-    ghost: "bg-transparent text-ink ring-1 ring-ink/12 hover:bg-ink/5",
-    clay: "bg-clay text-cream hover:brightness-110",
-    cream: "bg-cream text-ink ring-1 ring-ink/8 hover:bg-white",
+    ink: "vale-solid bg-[#1a1713] text-white hover:bg-[#2c2822]",
+    ghost: "bg-white text-[#1a1713] ring-2 ring-[#1a1713] hover:bg-[#f3eee4]",
+    clay: "vale-solid bg-[#b44528] text-white hover:bg-[#9a3a22]",
+    cream: "bg-white text-[#1a1713] ring-2 ring-white hover:bg-[#f3eee4]",
   }[kind];
-  const cls = `inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm tracking-wide transition duration-300 disabled:opacity-40 ${styles} ${className}`;
+  const cls = `inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[15px] font-medium tracking-wide transition duration-300 disabled:opacity-40 ${styles} ${className}`;
+  const color = kind === "ink" || kind === "clay" ? "#ffffff" : "#1a1713";
   if (href) {
     if (href.startsWith("http")) {
       return (
-        <a href={href} className={cls} target="_blank" rel="noreferrer">
+        <a href={href} className={cls} style={{ color }} target="_blank" rel="noreferrer">
           {children}
         </a>
       );
     }
     return (
-      <Link href={href} className={cls}>
+      <Link href={href} className={cls} style={{ color }}>
         {children}
       </Link>
     );
   }
   return (
-    <button type={type} onClick={onClick} className={cls} disabled={disabled}>
+    <button type={type} onClick={onClick} className={cls} style={{ color }} disabled={disabled}>
       {children}
     </button>
   );
@@ -110,14 +131,14 @@ export function Field({
 }) {
   return (
     <label className="grid gap-2 text-sm">
-      <span className="text-muted">{label}</span>
+      <span className="font-medium text-[#1a1713]">{label}</span>
       {children}
     </label>
   );
 }
 
 export const inputClass =
-  "w-full rounded-2xl bg-cream px-4 py-3 text-ink outline-none ring-1 ring-ink/10 transition focus:ring-moss/40";
+  "w-full rounded-2xl bg-white px-4 py-3 text-[#1a1713] outline-none ring-2 ring-[#1a1713]/20 transition focus:ring-[#1a1713]";
 
 export function Difficulty({ level }: { level: "easy" | "medium" | "hard" | "hostile" }) {
   const tone = {
