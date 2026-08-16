@@ -1,0 +1,320 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { getMerchant } from "./catalog";
+import { daysFromNowIso, daysSince } from "./dates";
+import { demoSavings, demoSubscriptions } from "./demo";
+import { monthlyOf } from "./money";
+import type {
+  AppState,
+  BillingCycle,
+  Plan,
+  StatementMatch,
+  Subscription,
+} from "./types";
+
+const KEY = "vale-v1";
+
+const empty: AppState = {
+  onboarded: false,
+  plan: "free",
+  unusedDays: 60,
+  subscriptions: [],
+  savings: [],
+};
+
+type Store = {
+  ready: boolean;
+  state: AppState;
+  startDemo: () => void;
+  startEmpty: () => void;
+  addSubscription: (input: {
+    merchantId?: string | null;
+    name: string;
+    amount: number;
+    cycle: BillingCycle;
+    lastUsedAt?: string | null;
+    bankDescriptor?: string;
+    notes?: string;
+  }) => string;
+  updateSubscription: (id: string, patch: Partial<Subscription>) => void;
+  removeSubscription: (id: string) => void;
+  markUsed: (id: string) => void;
+  confirmCancel: (id: string) => void;
+  restore: (id: string) => void;
+  importMatches: (matches: StatementMatch[]) => number;
+  setPlan: (plan: Plan) => void;
+  setUnusedDays: (n: number) => void;
+  reset: () => void;
+};
+
+const Ctx = createContext<Store | null>(null);
+
+function uid() {
+  return crypto.randomUUID();
+}
+
+const listeners = new Set<() => void>();
+let memory: AppState = empty;
+let diskRead = false;
+
+function emit() {
+  listeners.forEach((listener) => listener());
+}
+
+function readDisk() {
+  if (diskRead || typeof window === "undefined") return;
+  diskRead = true;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) memory = { ...empty, ...JSON.parse(raw) };
+  } catch {
+    memory = empty;
+  }
+}
+
+function write(next: AppState) {
+  memory = next;
+  if (typeof window !== "undefined") {
+    if (next === empty) localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, JSON.stringify(next));
+  }
+  emit();
+}
+
+function subscribe(listener: () => void) {
+  readDisk();
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot() {
+  readDisk();
+  return memory;
+}
+
+function getServerSnapshot() {
+  return empty;
+}
+
+function applyImport(s: AppState, matches: StatementMatch[]) {
+  const incoming = matches.filter((m) => m.merchant && m.amount != null);
+  const have = new Set(
+    s.subscriptions.filter((sub) => sub.status !== "cancelled" && sub.merchantId).map((sub) => sub.merchantId),
+  );
+  const next = [...s.subscriptions];
+  let added = 0;
+  for (const match of incoming) {
+    const merchant = match.merchant!;
+    if (have.has(merchant.id)) continue;
+    have.add(merchant.id);
+    added += 1;
+    next.unshift({
+      id: uid(),
+      merchantId: merchant.id,
+      name: merchant.name,
+      amount: match.amount!,
+      cycle: merchant.cycle,
+      lastUsedAt: null,
+      startedAt: new Date().toISOString(),
+      nextChargeAt: daysFromNowIso(merchant.cycle === "yearly" ? 365 : 30),
+      status: "active",
+      bankDescriptor: match.descriptor,
+    });
+  }
+  return { state: { ...s, subscriptions: next }, added };
+}
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const ready = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  const patch = useCallback((fn: (s: AppState) => AppState) => {
+    write(fn(memory));
+  }, []);
+
+  const startDemo = useCallback(() => {
+    write({
+      onboarded: true,
+      plan: "free",
+      unusedDays: 60,
+      subscriptions: demoSubscriptions(),
+      savings: demoSavings(),
+    });
+  }, []);
+
+  const startEmpty = useCallback(() => {
+    write({ ...empty, onboarded: true });
+  }, []);
+
+  const addSubscription: Store["addSubscription"] = useCallback((input) => {
+    const id = uid();
+    const merchant = getMerchant(input.merchantId);
+    const sub: Subscription = {
+      id,
+      merchantId: input.merchantId ?? merchant?.id ?? null,
+      name: input.name,
+      amount: input.amount,
+      cycle: input.cycle,
+      lastUsedAt: input.lastUsedAt ?? null,
+      startedAt: new Date().toISOString(),
+      nextChargeAt: daysFromNowIso(input.cycle === "yearly" ? 365 : input.cycle === "weekly" ? 7 : 30),
+      status: "active",
+      bankDescriptor: input.bankDescriptor,
+      notes: input.notes,
+    };
+    patch((s) => ({ ...s, subscriptions: [sub, ...s.subscriptions] }));
+    return id;
+  }, [patch]);
+
+  const updateSubscription: Store["updateSubscription"] = useCallback(
+    (id, next) => {
+      patch((s) => ({
+        ...s,
+        subscriptions: s.subscriptions.map((sub) => (sub.id === id ? { ...sub, ...next } : sub)),
+      }));
+    },
+    [patch],
+  );
+
+  const removeSubscription: Store["removeSubscription"] = useCallback(
+    (id) => {
+      patch((s) => ({
+        ...s,
+        subscriptions: s.subscriptions.filter((sub) => sub.id !== id),
+      }));
+    },
+    [patch],
+  );
+
+  const markUsed: Store["markUsed"] = useCallback(
+    (id) => {
+      updateSubscription(id, { lastUsedAt: new Date().toISOString() });
+    },
+    [updateSubscription],
+  );
+
+  const confirmCancel: Store["confirmCancel"] = useCallback(
+    (id) => {
+      patch((s) => {
+        const sub = s.subscriptions.find((x) => x.id === id);
+        if (!sub) return s;
+        const cancelledAt = new Date().toISOString();
+        return {
+          ...s,
+          subscriptions: s.subscriptions.map((x) =>
+            x.id === id ? { ...x, status: "cancelled" as const, cancelledAt } : x,
+          ),
+          savings: s.savings.some((e) => e.subscriptionId === id)
+            ? s.savings
+            : [
+                {
+                  id: uid(),
+                  subscriptionId: id,
+                  name: sub.name,
+                  monthlyAmount: monthlyOf(sub.amount, sub.cycle),
+                  cancelledAt,
+                },
+                ...s.savings,
+              ],
+        };
+      });
+    },
+    [patch],
+  );
+
+  const restore: Store["restore"] = useCallback(
+    (id) => {
+      patch((s) => ({
+        ...s,
+        subscriptions: s.subscriptions.map((sub) =>
+          sub.id === id ? { ...sub, status: "active" as const, cancelledAt: undefined } : sub,
+        ),
+        savings: s.savings.filter((e) => e.subscriptionId !== id),
+      }));
+    },
+    [patch],
+  );
+
+  const importMatches: Store["importMatches"] = useCallback((matches) => {
+    const next = applyImport(memory, matches);
+    write(next.state);
+    return next.added;
+  }, []);
+
+  const setPlan: Store["setPlan"] = useCallback(
+    (plan) => patch((s) => ({ ...s, plan })),
+    [patch],
+  );
+
+  const setUnusedDays: Store["setUnusedDays"] = useCallback(
+    (n) => patch((s) => ({ ...s, unusedDays: n })),
+    [patch],
+  );
+
+  const reset = useCallback(() => {
+    diskRead = true;
+    write({ ...empty });
+  }, []);
+
+  const value = useMemo<Store>(
+    () => ({
+      ready,
+      state: ready ? state : empty,
+      startDemo,
+      startEmpty,
+      addSubscription,
+      updateSubscription,
+      removeSubscription,
+      markUsed,
+      confirmCancel,
+      restore,
+      importMatches,
+      setPlan,
+      setUnusedDays,
+      reset,
+    }),
+    [
+      ready,
+      state,
+      startDemo,
+      startEmpty,
+      addSubscription,
+      updateSubscription,
+      removeSubscription,
+      markUsed,
+      confirmCancel,
+      restore,
+      importMatches,
+      setPlan,
+      setUnusedDays,
+      reset,
+    ],
+  );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useStore() {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useStore must be used within StoreProvider");
+  return ctx;
+}
+
+export function isQuiet(sub: Subscription, unusedDays: number) {
+  if (sub.status === "cancelled") return false;
+  const days = daysSince(sub.lastUsedAt);
+  if (days == null) return true;
+  return days >= unusedDays;
+}
