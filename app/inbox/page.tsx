@@ -6,17 +6,20 @@ import { useAuth } from "@/components/auth-provider";
 import { Button, Field, MerchantMark, inputClass, toast } from "@/components/ui";
 import { cycleLabel, usd, yearlyOf } from "@/lib/money";
 import { GMAIL_READONLY_SCOPE, googleUserInfo, isGmailAddress, requestGoogleAccessToken } from "@/lib/google";
-import { scanGmailInbox, type InboxFinding, type InboxScanResult } from "@/lib/inbox";
+import { getMerchant } from "@/lib/catalog";
+import { scanGmailInbox, mergeFindings, type InboxFinding, type InboxMention, type InboxScanResult } from "@/lib/inbox";
 import { envGoogleClientId, siteOrigin } from "@/lib/site";
 import { useStore } from "@/lib/store";
+import type { InboxDiscovery } from "@/lib/types";
 
 export default function InboxPage() {
   const router = useRouter();
   const { user, googleClientId, setGoogleClientId } = useAuth();
-  const { importInbox, setInboxPrompt } = useStore();
+  const { importInbox, setInboxPrompt, rememberInbox, state } = useStore();
   const [step, setStep] = useState<"ask" | "scan" | "review">("ask");
   const [findings, setFindings] = useState<InboxFinding[]>([]);
-  const [scan, setScan] = useState<Omit<InboxScanResult, "findings"> | null>(null);
+  const [mentions, setMentions] = useState<InboxMention[]>([]);
+  const [scan, setScan] = useState<Omit<InboxScanResult, "findings" | "mentions"> | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,14 +61,54 @@ export default function InboxPage() {
         throw new Error(`Google opened ${profile.email}. Switch to ${email} so Vale reads the matching inbox.`);
       }
       const result = await scanGmailInbox(token, setProgress);
-      setFindings(result.findings);
+      const remembered: InboxFinding[] = (state.inboxDiscoveries ?? []).map((d) => ({
+        key: d.merchantId || `raw:${d.name.trim().toLowerCase()}`,
+        merchant: getMerchant(d.merchantId),
+        name: d.name,
+        amount: d.amount,
+        estimated: d.estimated,
+        free: d.free,
+        cycle: d.cycle,
+        from: d.from,
+        subject: d.subject,
+        date: null,
+        confidence: 0.7,
+        kind: d.kind,
+        localLabel: null,
+      }));
+      const merged = mergeFindings(result.findings, remembered);
+      const foundIds = new Set(merged.map((f) => f.merchant?.id).filter(Boolean) as string[]);
+      rememberInbox(
+        merged.map(
+          (f): InboxDiscovery => ({
+            merchantId: f.merchant?.id ?? null,
+            name: f.name,
+            amount: f.amount,
+            cycle: f.cycle,
+            kind: f.kind,
+            free: f.free,
+            estimated: f.estimated,
+            subject: f.subject,
+            from: f.from,
+          }),
+        ),
+      );
+      setFindings(merged);
+      setMentions(result.mentions.filter((m) => !foundIds.has(m.merchantId)));
       setScan({
-        missed: result.missed,
+        missed: result.missed.filter((m) => !foundIds.has(m.id)),
         scanned: result.scanned,
         estimate: result.estimate,
         mode: result.mode,
       });
-      setSelected(Object.fromEntries(result.findings.map((f) => [f.key, true])));
+      setSelected(
+        Object.fromEntries(
+          merged.map((f) => [
+            f.key,
+            f.free || f.kind === "account" || f.kind === "receipt" || (!f.estimated && f.amount > 0),
+          ]),
+        ),
+      );
       setInboxPrompt("allowed");
       setStep("review");
     } catch (err) {
@@ -95,23 +138,46 @@ export default function InboxPage() {
     router.push("/");
   }
 
+  function addMention(m: InboxMention) {
+    const merchant = getMerchant(m.merchantId);
+    const n = importInbox([
+      {
+        merchantId: m.merchantId,
+        name: merchant?.name ?? m.name,
+        amount: merchant?.typicalPrice ?? 0,
+        cycle: merchant?.cycle ?? "monthly",
+        bankDescriptor: m.subject || m.from,
+      },
+    ]);
+    toast(n ? `Added ${merchant?.name ?? m.name} at typical price.` : "That was already on the ledger.");
+    setMentions((list) => list.filter((x) => x.merchantId !== m.merchantId));
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
       <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Your inbox</p>
       <h1 className="serif mt-3 text-5xl leading-tight">What this inbox holds</h1>
       <p className="mt-4 text-lg leading-relaxed text-[#3d3830]">
-        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale reads receipts,
-        renewals, free-plan mail, and processor bills (Stripe, Apple, Google, PayPal) — then shows what showed up and
-        what it looked for and did not find. Read-only. Nothing is sent or deleted.
+        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale reads the
+        mailbox, then sorts it: memberships with a receipt or plan mail, brands named in other mail (not bills), and
+        services with no mail at all. Read-only.
       </p>
 
       {step === "ask" || step === "scan" ? (
         <div className="mt-10 rounded-[1.8rem] bg-white p-7 ring-1 ring-[#1a1713]/10">
           <ul className="grid gap-3 text-[15px] leading-relaxed text-[#1a1713]">
             <li>
-              If this mailbox is a few hundred messages or fewer, Vale reads every last one — spam and promotions
-              included. If it is huge, Vale pages through three years of receipts, invoices, Stripe, Apple, PayPal,
-              Google payments, Cursor, Claude, ChatGPT, and anything that looks like a membership, named or not.
+              On a mailbox of about 1,500 messages or fewer, Vale reads every message. On a larger one it pages
+              through three years of Stripe, PayPal, Apple, Google payments, and mail from Cursor, Claude, ChatGPT,
+              and the rest of the watchlist.
+            </li>
+            <li>
+              Google does not give Vale a list of “every subscription on this Gmail.” Cursor, Claude, Netflix and the
+              rest only show up if they emailed this address — All Mail and Trash included, not only the inbox.
+            </li>
+            <li>
+              Once Vale sees a receipt, it remembers it on this device. Deleting the email later will not wipe it here.
+              Add to ledger to keep it on the home screen.
             </li>
             <li>Password mail, newsletters, and one-off store orders are ignored.</li>
             <li>
@@ -171,18 +237,19 @@ export default function InboxPage() {
       {step === "review" ? (
         <div className="mt-10">
           {scan ? (
-            <p className="mb-6 text-sm leading-relaxed text-[#3d3830]">
+            <p className="mb-8 text-sm leading-relaxed text-[#3d3830]">
               {scan.mode === "all"
                 ? `Vale read all ${scan.scanned} message${scan.scanned === 1 ? "" : "s"} in this mailbox.`
-                : `This mailbox is large (~${scan.estimate.toLocaleString()}). Vale read ${scan.scanned} billing-shaped messages from the last three years — not every newsletter.`}
+                : `This mailbox is large (~${scan.estimate.toLocaleString()}). Vale read ${scan.scanned} billing and watchlist messages from the last three years.`}
             </p>
           ) : null}
 
+          <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">You have</p>
           {findings.length === 0 ? (
-            <div className="rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
+            <div className="mt-3 rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
               <p className="leading-relaxed text-[#3d3830]">
-                No membership mail in what Vale read — paid or free. If a charge lives only on a card statement, paste
-                that, or add it by hand.
+                No receipt or plan mail. If something bills a card without emailing this address, paste a statement
+                or add it by hand.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button href="/import">Paste a statement</Button>
@@ -193,7 +260,7 @@ export default function InboxPage() {
             </div>
           ) : (
             <>
-              <p className="text-lg text-[#1a1713]">
+              <p className="mt-3 text-lg text-[#1a1713]">
                 {chosen.length} selected · {usd(monthly)} / month if they stay
                 {freeCount ? ` · ${freeCount} free` : ""}
               </p>
@@ -219,6 +286,14 @@ export default function InboxPage() {
                         <span className="min-w-0 flex-1">
                           <span className="block font-medium">{f.name}</span>
                           <span className="block truncate text-sm text-[#3d3830]">{f.subject || f.from}</span>
+                          <span className="mt-0.5 block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
+                            {f.kind === "account"
+                              ? "on this inbox · no receipt found"
+                              : f.kind === "plan"
+                                ? "plan mail"
+                                : "receipt"}
+                            {f.localLabel ? ` · billed ${f.localLabel}` : ""}
+                          </span>
                         </span>
                         <span className="text-right">
                           {f.free ? (
@@ -242,7 +317,11 @@ export default function InboxPage() {
                                 <span className="ml-1 text-sm text-[#3d3830]">/{cycleLabel(f.cycle)}</span>
                               </span>
                               <span className="block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
-                                {f.estimated ? "typical price" : `${usd(yearly)} / year`}
+                                {f.kind === "account"
+                                  ? "typical — set what you pay"
+                                  : f.estimated
+                                    ? "typical price"
+                                    : `${usd(yearly)} / year`}
                               </span>
                             </>
                           )}
@@ -263,19 +342,48 @@ export default function InboxPage() {
             </>
           )}
 
-          {scan && scan.missed.length > 0 ? (
-            <div className="mt-10 rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
-              <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Not in this mail</p>
+          {mentions.length > 0 ? (
+            <div className="mt-12">
+              <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">
+                Named in mail, not a bill
+              </p>
               <p className="mt-2 text-sm leading-relaxed text-[#3d3830]">
-                Vale looked for these too. No receipt or membership mail showed up. That usually means this address does
-                not pay for them — or they bill a different inbox.
+                Someone else’s mail named these. Vale did not find an account or a receipt on this address.
+              </p>
+              <ul className="mt-5 grid gap-3">
+                {mentions.map((m) => (
+                  <li
+                    key={m.merchantId}
+                    className="flex items-center gap-4 rounded-[1.5rem] bg-white p-4 ring-1 ring-[#1a1713]/10"
+                  >
+                    <MerchantMark merchantId={m.merchantId} name={m.name} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">{m.name}</span>
+                      <span className="block truncate text-sm text-[#3d3830]">{m.subject || m.from}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => addMention(m)}
+                      className="shrink-0 text-sm font-medium underline decoration-[#1a1713]/30 underline-offset-4"
+                    >
+                      Add typical
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {scan && scan.missed.length > 0 ? (
+            <div className="mt-12 rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
+              <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Not in this inbox</p>
+              <p className="mt-2 text-sm leading-relaxed text-[#3d3830]">
+                No receipt, plan mail, or even a subject line. This address likely does not pay for these — or they
+                bill somewhere else.
               </p>
               <ul className="mt-5 flex flex-wrap gap-2">
                 {scan.missed.map((m) => (
-                  <li
-                    key={m.id}
-                    className="rounded-full bg-[#1a1713]/5 px-3 py-1.5 text-sm text-[#1a1713]"
-                  >
+                  <li key={m.id} className="rounded-full bg-[#1a1713]/5 px-3 py-1.5 text-sm text-[#1a1713]">
                     {m.name}
                   </li>
                 ))}

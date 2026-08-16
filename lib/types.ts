@@ -68,6 +68,18 @@ export type Profile = {
   email: string;
 };
 
+export type InboxDiscovery = {
+  merchantId: string | null;
+  name: string;
+  amount: number;
+  cycle: BillingCycle;
+  kind: "receipt" | "plan" | "account";
+  free: boolean;
+  estimated: boolean;
+  subject: string;
+  from: string;
+};
+
 export type AppState = {
   profile: Profile | null;
   plan: Plan;
@@ -76,6 +88,7 @@ export type AppState = {
   savings: SavingsEvent[];
   inboxPrompt: "pending" | "allowed" | "skipped";
   inboxScannedAt: string | null;
+  inboxDiscoveries: InboxDiscovery[];
 };
 
 export type StatementMatch = {

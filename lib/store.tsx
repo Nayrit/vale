@@ -16,6 +16,7 @@ import { monthlyOf } from "./money";
 import type {
   AppState,
   BillingCycle,
+  InboxDiscovery,
   Plan,
   Profile,
   StatementMatch,
@@ -32,6 +33,7 @@ const empty: AppState = {
   savings: [],
   inboxPrompt: "pending",
   inboxScannedAt: null,
+  inboxDiscoveries: [],
 };
 
 type Store = {
@@ -65,6 +67,7 @@ type Store = {
   ) => number;
   setInboxPrompt: (value: AppState["inboxPrompt"]) => void;
   setInboxScannedAt: (iso: string | null) => void;
+  rememberInbox: (findings: InboxDiscovery[]) => void;
   setPlan: (plan: Plan) => void;
   setUnusedDays: (n: number) => void;
   reset: () => void;
@@ -149,7 +152,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     activeUserId = userId;
     try {
       const raw = localStorage.getItem(KEY_PREFIX + userId);
-      memory = raw ? { ...empty, ...JSON.parse(raw), profile } : { ...empty, profile };
+      if (!raw) {
+        memory = { ...empty, profile };
+      } else {
+        const parsed = JSON.parse(raw) as Partial<AppState>;
+        memory = {
+          ...empty,
+          ...parsed,
+          profile,
+          inboxDiscoveries: parsed.inboxDiscoveries ?? [],
+        };
+      }
     } catch {
       memory = { ...empty, profile };
     }
@@ -301,6 +314,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [patch],
   );
 
+  const rememberInbox: Store["rememberInbox"] = useCallback(
+    (findings) => {
+      patch((s) => {
+        const rank = { receipt: 3, plan: 2, account: 1 };
+        const map = new Map<string, InboxDiscovery>();
+        for (const d of s.inboxDiscoveries ?? []) {
+          map.set(d.merchantId || d.name.toLowerCase(), d);
+        }
+        for (const d of findings) {
+          const key = d.merchantId || d.name.toLowerCase();
+          const prev = map.get(key);
+          if (!prev) {
+            map.set(key, d);
+            continue;
+          }
+          const better =
+            rank[d.kind] !== rank[prev.kind]
+              ? rank[d.kind] > rank[prev.kind]
+              : (prev.estimated && !d.estimated) || (!prev.free && d.amount > prev.amount);
+          if (better) map.set(key, d);
+        }
+        return { ...s, inboxDiscoveries: [...map.values()], inboxScannedAt: new Date().toISOString() };
+      });
+    },
+    [patch],
+  );
+
   const setPlan: Store["setPlan"] = useCallback(
     (plan) => patch((s) => ({ ...s, plan })),
     [patch],
@@ -332,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       importInbox,
       setInboxPrompt,
       setInboxScannedAt,
+      rememberInbox,
       setPlan,
       setUnusedDays,
       reset,
@@ -351,6 +392,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       importInbox,
       setInboxPrompt,
       setInboxScannedAt,
+      rememberInbox,
       setPlan,
       setUnusedDays,
       reset,

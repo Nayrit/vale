@@ -1,11 +1,20 @@
 import { getMerchant } from "./catalog";
 import {
   matchInboxMerchant,
-  matchGoogleProduct,
   parseChargeAmount,
+  parseLocalAmount,
   htmlToText,
   isLocalCurrency,
   isBillingProcessor,
+  isMembershipMail,
+  hasBillingEvidence,
+  hasPlanConfirm,
+  amountFitsCatalog,
+  watchlistHits,
+  isPolicyMail,
+  isStripeSender,
+  matchAccountMailbox,
+  type MailHeaders,
 } from "./inbox-match";
 import type { BillingCycle, Merchant } from "./types";
 
@@ -21,19 +30,28 @@ export type InboxFinding = {
   subject: string;
   date: string | null;
   confidence: number;
+  kind: "receipt" | "plan" | "account";
+  localLabel: string | null;
+};
+
+export type InboxMention = {
+  merchantId: string;
+  name: string;
+  from: string;
+  subject: string;
 };
 
 export type ScanProgress = { done: number; total: number; phase: string };
 
 export type InboxScanResult = {
   findings: InboxFinding[];
+  mentions: InboxMention[];
   missed: Merchant[];
   scanned: number;
   estimate: number;
   mode: "all" | "billing";
 };
 
-/** Services Vale always reports as found or not-found after a scan. */
 export const INBOX_WATCHLIST_IDS = [
   "google-one",
   "gemini",
@@ -73,6 +91,16 @@ type GmailList = {
 
 function header(msg: GmailMessage, name: string) {
   return msg.payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+}
+
+function mailHeaders(msg: GmailMessage): MailHeaders {
+  return {
+    from: header(msg, "From"),
+    subject: header(msg, "Subject"),
+    listUnsubscribe: header(msg, "List-Unsubscribe"),
+    listId: header(msg, "List-Id"),
+    precedence: header(msg, "Precedence"),
+  };
 }
 
 function b64url(data: string) {
@@ -126,27 +154,11 @@ async function collectText(token: string, messageId: string, part: GmailPart | u
 
 function guessCycle(text: string, fallback: BillingCycle): BillingCycle {
   const t = text.toLowerCase();
-  if (/\b(annual|yearly|\/\s*year|per year|billed annually)\b/.test(t)) return "yearly";
-  if (/\b(weekly|\/\s*week|per week)\b/.test(t)) return "weekly";
-  return fallback;
-}
-
-const NOT_A_CHARGE =
-  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code)\b/i;
-
-const SHIPPING = /\b(shipped|out for delivery|tracking number|on the way|has been delivered)\b/i;
-
-const CHARGE_HINT =
-  /\b(subscription|subscribed|invoice|renewal|membership|recurring|receipt|billing|you've been charged|you have been charged|payment confirmation|free trial|free plan|google one|gemini|stripe|cursor|claude|anthropic|anysphere|billed|auto[- ]?renew|paid plan|premium|pro plan|plus plan)\b/i;
-
-function looksLikeCharge(from: string, subject: string, blob: string) {
-  if (NOT_A_CHARGE.test(subject)) return false;
-  if (SHIPPING.test(subject) && !/\b(subscription|membership|renew)\b/i.test(subject + blob.slice(0, 400))) {
-    return false;
+  if (/\b(billed annually|annual plan|annual subscription|\/\s*year|per year|yearly subscription)\b/.test(t)) {
+    return "yearly";
   }
-  if (isBillingProcessor(from)) return true;
-  if (matchGoogleProduct(from, subject, blob)) return true;
-  return CHARGE_HINT.test(`${from}\n${subject}\n${blob}`);
+  if (/\b(billed weekly|weekly plan|\/\s*week|per week)\b/.test(t)) return "weekly";
+  return fallback;
 }
 
 function displayName(from: string, subject: string) {
@@ -189,15 +201,12 @@ async function listAllIds(
   return { ids, estimate, complete: false };
 }
 
-function billingQueries() {
+function mustFetchQueries() {
   return [
-    "newer_than:36m from:(stripe.com OR paypal.com OR apple.com OR google.com OR openai.com OR anthropic.com OR cursor.com OR anysphere.com OR github.com OR adobe.com OR spotify.com OR netflix.com OR microsoft.com OR dropbox.com OR notion.so OR paddle.com)",
-    "newer_than:36m (subject:receipt OR subject:invoice OR subject:subscription OR subject:renewal OR subject:membership OR subject:billing OR subject:payment)",
-    'newer_than:36m ("Google One" OR "Gemini Advanced" OR "Google AI Pro" OR "AI Premium" OR "Claude Pro" OR Anysphere OR Cursor OR ChatGPT OR OpenAI)',
-    'newer_than:36m (recurring OR "you\'ve been charged" OR "free trial" OR "free plan" OR subscribed OR "auto-renew")',
-    "newer_than:36m (label:purchases OR category:purchases)",
-    "newer_than:36m from:payments-noreply@google.com",
-    "newer_than:36m from:googleone-noreply@google.com",
+    "newer_than:36m from:stripe.com",
+    "newer_than:36m from:invoice.stripe.com",
+    'newer_than:36m (subject:"Receipt from" OR subject:"Invoice from" OR subject:"Your receipt")',
+    "newer_than:36m from:(cursor.com OR anysphere.com OR anthropic.com OR claude.ai OR openai.com OR chatgpt.com)",
   ];
 }
 
@@ -205,8 +214,11 @@ function keepFinding(prev: InboxFinding | undefined, next: InboxFinding) {
   if (!prev) return next;
   if (prev.free && !next.free) return next;
   if (!prev.free && next.free) return prev;
+  const rank = { receipt: 3, plan: 2, account: 1 };
+  if (rank[next.kind] !== rank[prev.kind]) return rank[next.kind] > rank[prev.kind] ? next : prev;
+  if (prev.estimated && !next.estimated) return next;
+  if (!prev.estimated && next.estimated) return prev;
   if (next.confidence > prev.confidence) return next;
-  if (next.confidence === prev.confidence && next.amount > prev.amount) return next;
   return prev;
 }
 
@@ -215,9 +227,9 @@ function findingKey(merchant: Merchant | null, name: string) {
 }
 
 const ALL_MAIL = "in:anywhere -in:chats";
-const FULL_READ_CAP = 800;
-const BILLING_CAP = 900;
-const FULL_READ_IF_AT_MOST = 500;
+const FULL_READ_CAP = 2000;
+const BILLING_CAP = 1200;
+const FULL_READ_IF_AT_MOST = 1500;
 
 export async function scanGmailInbox(
   token: string,
@@ -232,17 +244,37 @@ export async function scanGmailInbox(
   const firstComplete = !sample.nextPageToken;
   const readAll = firstComplete || estimate <= FULL_READ_IF_AT_MOST;
 
-  const ids = new Set<string>();
+  const mustIds = new Set<string>();
+  onProgress?.({ done: 0, total: 1, phase: "Finding Stripe and product mail" });
+  for (const q of mustFetchQueries()) {
+    const extra = await listAllIds(token, q, 250);
+    extra.ids.forEach((id) => mustIds.add(id));
+  }
+
+  const ids = new Set<string>(mustIds);
   (sample.messages ?? []).forEach((m) => ids.add(m.id));
 
   if (readAll) {
-    onProgress?.({ done: ids.size, total: Math.min(estimate || ids.size, FULL_READ_CAP), phase: "Listing every message" });
+    onProgress?.({
+      done: ids.size,
+      total: Math.min(estimate || ids.size, FULL_READ_CAP),
+      phase: "Listing every message",
+    });
     const rest = await listAllIds(token, ALL_MAIL, FULL_READ_CAP, (count) => {
-      onProgress?.({ done: count, total: Math.min(estimate || count, FULL_READ_CAP), phase: "Listing every message" });
+      onProgress?.({
+        done: count,
+        total: Math.min(estimate || count, FULL_READ_CAP),
+        phase: "Listing every message",
+      });
     });
     rest.ids.forEach((id) => ids.add(id));
   } else {
-    const queries = billingQueries();
+    const queries = [
+      "newer_than:36m from:(paypal.com OR paddle.com OR fastspring.com OR chargebee.com)",
+      "newer_than:36m from:(payments-noreply@google.com OR googleone-noreply@google.com)",
+      "newer_than:36m from:apple.com (subject:receipt OR subject:invoice OR subject:bill OR subject:subscription)",
+      "newer_than:36m from:(github.com OR spotify.com OR netflix.com OR adobe.com OR notion.so)",
+    ];
     for (let i = 0; i < queries.length; i++) {
       onProgress?.({ done: i, total: queries.length, phase: "Listing receipts" });
       const found = await listAllIds(token, queries[i], 300);
@@ -251,8 +283,11 @@ export async function scanGmailInbox(
     }
   }
 
-  const list = [...ids].slice(0, readAll ? FULL_READ_CAP : BILLING_CAP);
+  const cap = readAll ? FULL_READ_CAP : BILLING_CAP;
+  const rest = [...ids].filter((id) => !mustIds.has(id));
+  const list = [...mustIds, ...rest].slice(0, Math.max(cap, mustIds.size));
   const findings = new Map<string, InboxFinding>();
+  const mentions = new Map<string, InboxMention>();
   onProgress?.({ done: 0, total: list.length || 1, phase: "Reading messages" });
 
   for (let i = 0; i < list.length; i += 8) {
@@ -261,40 +296,86 @@ export async function scanGmailInbox(
       chunk.map((id) => gmailGet<GmailMessage>(token, `messages/${id}?format=full`)),
     );
     for (const msg of messages) {
-      const from = header(msg, "From");
-      const subject = header(msg, "Subject");
+      const headers = mailHeaders(msg);
+      const from = headers.from;
+      const subject = headers.subject;
       const dateHdr = header(msg, "Date");
       const texts: string[] = [from, subject, msg.snippet ?? ""];
       await collectText(token, msg.id, msg.payload, texts);
       const blob = texts.join(" \n ").slice(0, 24000);
-      if (!looksLikeCharge(from, subject, blob)) continue;
+      const named = watchlistHits(from, subject);
+      const policy = isPolicyMail(subject, blob) && !isStripeSender(from) && !matchAccountMailbox(from);
+      if (policy || !isMembershipMail(headers, blob)) {
+        for (const m of named) {
+          if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
+          if (!mentions.has(m.id)) {
+            mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
+          }
+        }
+        continue;
+      }
 
+      const account = matchAccountMailbox(from);
       const matched = matchInboxMerchant(from, subject, blob);
-      const merchant = matched.merchant;
+      const merchant = matched.merchant || account;
       const name = merchant?.name || displayName(from, subject);
-      const parsed = parseChargeAmount(blob);
+      let parsed = parseChargeAmount(blob);
       const local = isLocalCurrency(blob);
-      const paidUsd = parsed != null && parsed >= 0.5 && !local;
-      const processor = isBillingProcessor(from);
-      const free =
-        /\b(free trial|free plan|free tier|complimentary|no charge)\b/i.test(blob) && !paidUsd && parsed == null;
+      const localMoney = parseLocalAmount(blob);
+      if (parsed == null && isStripeSender(from) && !local) {
+        const dollars = [...blob.matchAll(/\$\s*(\d{1,4}(?:,\d{3})*\.\d{2})/g)];
+        const last = dollars.at(-1)?.[1];
+        if (last) {
+          const n = Number(last.replace(/,/g, ""));
+          if (Number.isFinite(n) && n >= 0.5 && n < 500) parsed = n;
+        }
+      }
+      const parsedUsd = parsed != null && parsed >= 0.5 && !local;
+      const paidUsd =
+        parsedUsd && (!merchant || amountFitsCatalog(parsed!, merchant.typicalPrice));
+      const processor = isBillingProcessor(from) || isStripeSender(from);
+      const billing = hasBillingEvidence(from, subject, blob) || isStripeSender(from);
+      const plan = hasPlanConfirm(subject, blob);
+      const saysFree =
+        /\b(free trial|free plan|free tier|free access|free copilot|your free|complimentary|no charge)\b/i.test(
+          `${subject}\n${blob.slice(0, 1500)}`,
+        );
+      const free = saysFree && !paidUsd && !isStripeSender(from);
 
       let amount = 0;
       let estimated = false;
-      if (paidUsd) {
-        amount = parsed!;
-      } else if (free) {
+      let kind: InboxFinding["kind"] = "receipt";
+      if (free) {
         amount = 0;
-      } else if (merchant) {
-        amount = merchant.typicalPrice;
+        kind = "plan";
+      } else if (paidUsd) {
+        amount = parsed!;
+        kind = "receipt";
+      } else if (localMoney && billing) {
+        amount = merchant?.typicalPrice ?? 0;
+        estimated = !!merchant;
+        kind = "receipt";
+      } else if (billing && processor && !account) {
+        amount = 0;
+        kind = "receipt";
+      } else if (account) {
+        amount = merchant?.typicalPrice ?? 0;
         estimated = true;
-      } else if (parsed != null && !local) {
-        amount = parsed;
+        kind = "account";
+      } else if (plan && merchant) {
+        amount = 0;
+        kind = "plan";
       } else {
-        estimated = true;
+        for (const m of named.length ? named : merchant ? [merchant] : []) {
+          if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
+          if (!mentions.has(m.id)) {
+            mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
+          }
+        }
+        continue;
       }
 
-      if (!merchant && !paidUsd && !free && !processor) continue;
+      if (free && !merchant && !processor) continue;
 
       const next: InboxFinding = {
         key: findingKey(merchant, name),
@@ -307,7 +388,9 @@ export async function scanGmailInbox(
         from,
         subject,
         date: dateHdr || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : null),
-        confidence: merchant ? matched.confidence : processor ? 0.6 : 0.5,
+        confidence: merchant ? matched.confidence || 0.9 : processor ? 0.6 : 0.5,
+        kind,
+        localLabel: local && localMoney ? localMoney.label : null,
       };
       findings.set(next.key, keepFinding(findings.get(next.key), next));
     }
@@ -318,14 +401,27 @@ export async function scanGmailInbox(
     });
   }
 
-  const foundIds = new Set([...findings.values()].map((f) => f.merchant?.id).filter(Boolean) as string[]);
-  const missed = INBOX_WATCHLIST_IDS.map((id) => getMerchant(id)).filter((m): m is Merchant => !!m && !foundIds.has(m.id));
+  const foundIds = new Set(
+    [...findings.values()].map((f) => f.merchant?.id).filter(Boolean) as string[],
+  );
+  for (const id of foundIds) mentions.delete(id);
+  const missed = INBOX_WATCHLIST_IDS.map((id) => getMerchant(id)).filter(
+    (m): m is Merchant => !!m && !foundIds.has(m.id) && !mentions.has(m.id),
+  );
 
   return {
     findings: [...findings.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name)),
+    mentions: [...mentions.values()].sort((a, b) => a.name.localeCompare(b.name)),
     missed,
     scanned: list.length,
     estimate,
     mode: readAll ? "all" : "billing",
   };
+}
+
+export function mergeFindings(live: InboxFinding[], remembered: InboxFinding[]): InboxFinding[] {
+  const map = new Map<string, InboxFinding>();
+  for (const f of remembered) map.set(f.key, f);
+  for (const f of live) map.set(f.key, keepFinding(map.get(f.key), f));
+  return [...map.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
 }
