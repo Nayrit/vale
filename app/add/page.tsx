@@ -7,6 +7,7 @@ import { daysAgoIso } from "@/lib/dates";
 import type { BillingCycle } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import { Button, CycleSelect, Field, Mark, inputClass, toast } from "@/components/ui";
+import { Logo } from "@/components/logo";
 
 function AddForm() {
   const router = useRouter();
@@ -143,7 +144,7 @@ function AddForm() {
 
 export default function AddPage() {
   return (
-    <Suspense fallback={<p className="serif text-2xl italic text-muted">Vale</p>}>
+    <Suspense fallback={<Logo href={null} size="sm" className="p-8" />}>
       <AddForm />
     </Suspense>
   );

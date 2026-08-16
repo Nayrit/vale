@@ -99,8 +99,8 @@ export default function InboxPage() {
         <div className="mt-10 rounded-[1.8rem] bg-white p-7 ring-1 ring-[#1a1713]/10">
           <ul className="grid gap-3 text-[15px] leading-relaxed text-[#1a1713]">
             <li>
-              Vale keeps paid bills and free plans or trials — anything that looks like a membership, including $0 —
-              so you can cancel before it starts charging.
+              Vale reads Google payment receipts and membership mail — Google One, Gemini / Google AI Pro, YouTube
+              Premium — plus other bills and free trials on this address.
             </li>
             <li>Password mail, newsletters, and one-off store orders are ignored.</li>
             <li>

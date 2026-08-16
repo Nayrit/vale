@@ -18,9 +18,19 @@ const ui = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Vale — find the door, keep the money",
+  title: "Vale — your subscription steward",
   description:
-    "Match bank charges to cancellation pages, walk past dark patterns, and keep what you stop spending.",
+    "Find subscriptions billed to your email, match bank charges to cancellation pages, and keep the money you stop spending.",
+  icons: {
+    icon: "/vale-logo.png",
+    apple: "/vale-logo.png",
+  },
+  openGraph: {
+    title: "Vale — your subscription steward",
+    description:
+      "Find subscriptions billed to your email, match bank charges to cancellation pages, and keep the money you stop spending.",
+    images: ["/vale-logo.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

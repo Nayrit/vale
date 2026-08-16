@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
+import { Logo } from "@/components/logo";
 import { useStore } from "@/lib/store";
 
 const links = [
@@ -51,8 +52,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   if (!ready || !auth.ready) {
     return (
-      <div className="relative z-10 grid min-h-screen place-items-center">
-        <p className="serif text-3xl italic text-[#1a1713]">Vale</p>
+      <div className="relative z-10 grid min-h-screen place-items-center px-6">
+        <Logo href={null} size="lg" priority />
       </div>
     );
   }
@@ -65,7 +66,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return (
       <div className="relative z-10 grid min-h-screen place-items-center px-6">
         <div className="text-center">
-          <p className="serif text-3xl italic text-[#1a1713]">Vale</p>
+          <Logo href={null} size="lg" priority />
           <a href="/login" className="mt-6 inline-block text-[15px] font-medium text-[#1a1713] underline-offset-4 hover:underline">
             Sign in
           </a>
@@ -79,9 +80,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative z-10 min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
       <aside className="sticky top-0 z-20 flex items-center justify-between gap-6 border-b border-[#1a1713]/15 bg-[#f3eee4] px-5 py-4 lg:h-screen lg:flex-col lg:items-stretch lg:border-b-0 lg:border-r lg:px-7 lg:py-10">
-        <Link href="/" className="serif text-3xl italic leading-none text-[#1a1713]">
-          Vale
-        </Link>
+        <Logo size="sm" className="shrink-0 lg:hidden" priority />
+        <Logo size="md" className="hidden shrink-0 lg:inline-block" priority />
         <nav className="flex gap-1 overflow-x-auto lg:mt-14 lg:flex-col lg:gap-2">
           {links.map((link) => {
             const active = pathname === link.href;

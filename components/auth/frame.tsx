@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { Logo } from "@/components/logo";
 
 export function AuthFrame({
   kicker,
@@ -18,18 +18,14 @@ export function AuthFrame({
     <div className="relative z-10 min-h-screen px-6 py-10 sm:px-10">
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-5xl items-center gap-12 lg:grid-cols-[1fr_26rem]">
         <div className="hidden lg:block">
-          <Link href="/login" className="serif text-5xl italic text-[#1a1713]">
-            Vale
-          </Link>
+          <Logo href="/login" size="lg" priority />
           <p className="mt-8 max-w-md text-2xl leading-snug text-[#1a1713]">{lede}</p>
           <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-[#3d3830]">
             After you sign in, Vale asks permission to read billing mail for that address. Nothing is scanned unless you allow it.
           </p>
         </div>
         <div>
-          <Link href="/login" className="serif mb-8 block text-4xl italic lg:hidden">
-            Vale
-          </Link>
+          <Logo href="/login" size="md" className="mb-8 lg:hidden" priority />
           <div className="rounded-[2rem] bg-white p-7 shadow-[0_24px_60px_-32px_rgba(26,23,18,0.35)] ring-1 ring-[#1a1713]/10 sm:p-8">
             <p className="text-[12px] font-medium uppercase tracking-[0.2em] text-[#3d3830]">{kicker}</p>
             <h1 className="serif mt-2 text-3xl sm:text-4xl">{title}</h1>

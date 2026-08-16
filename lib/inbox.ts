@@ -1,4 +1,4 @@
-import { matchDescriptor, parseAmount } from "./match";
+import { matchInboxMerchant, parseChargeAmount, isGoogleBillingSender } from "./inbox-match";
 import type { BillingCycle, Merchant } from "./types";
 
 export type InboxFinding = {
@@ -60,21 +60,26 @@ function guessCycle(text: string, fallback: BillingCycle): BillingCycle {
 }
 
 const NOT_A_CHARGE =
-  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code|newsletter|we miss you|weekly digest|confirm your email)\b/i;
+  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code|newsletter|we miss you|weekly digest|confirm your email|what's new|new features)\b/i;
 
 const IS_MEMBERSHIP =
-  /\b(subscription|subscribed|invoice|renewal|renewed|membership|recurring|you've been charged|you have been charged|payment confirmation|auto[- ]?renew|billed you|your bill|free trial|free plan|free tier|free membership|trial (has )?started|you're subscribed|you are (now )?subscribed)\b/i;
+  /\b(subscription|subscribed|invoice|renewal|renewed|membership|recurring|you've been charged|you have been charged|payment confirmation|auto[- ]?renew|billed you|your bill|free trial|free plan|free tier|free membership|trial (has )?started|you're subscribed|you are (now )?subscribed|google one|gemini advanced|google ai pro|ai premium)\b/i;
 
 const IS_FREE =
   /\b(free trial|your free trial|start(ed)? your free|free plan|free tier|free membership|complimentary|no charge|no cost|\$0(?:\.00)?|trial (period|started|begins)|on the free (plan|tier)|welcome to .{0,48}(free|student))\b/i;
 
-function isMembershipMail(subject: string, blob: string) {
-  const head = `${subject}\n${blob.slice(0, 1200)}`;
+function isMembershipMail(from: string, subject: string, blob: string) {
+  const head = `${from}\n${subject}\n${blob.slice(0, 1500)}`;
   if (NOT_A_CHARGE.test(subject) || NOT_A_CHARGE.test(head)) return false;
+  if (isGoogleBillingSender(from)) {
+    return /\b(google one|gemini|youtube premium|ai pro|ai premium|membership|subscription|recurring|google ai)\b/i.test(
+      head,
+    );
+  }
   if (IS_MEMBERSHIP.test(subject) || IS_MEMBERSHIP.test(head) || IS_FREE.test(head)) return true;
   return (
     /\breceipt\b/i.test(subject) &&
-    /\b(subscription|membership|premium|plus|plan|renew|recurring|monthly|annual|trial)\b/i.test(head)
+    /\b(subscription|membership|premium|plus|plan|renew|recurring|monthly|annual|trial|google one|gemini)\b/i.test(head)
   );
 }
 
@@ -104,11 +109,33 @@ async function listIds(token: string, q: string, maxResults: number) {
   return data.messages?.map((m) => m.id) ?? [];
 }
 
+function scanQueries() {
+  return [
+    'newer_than:18m from:payments-noreply@google.com',
+    'newer_than:18m from:googleone-noreply@google.com',
+    'newer_than:18m (subject:"Google One" OR subject:"Gemini Advanced" OR subject:"Google AI" OR subject:"AI Premium" OR subject:Gemini)',
+    'newer_than:18m (subject:subscription OR subject:invoice OR subject:renewal OR subject:membership OR subject:trial OR subject:subscribed OR subject:"payment confirmation" OR subject:"you\'ve been charged" OR subject:receipt OR subject:billing OR "free trial" OR "free plan" OR "you\'re subscribed")',
+  ];
+}
+
+function keepFinding(prev: InboxFinding | undefined, next: InboxFinding) {
+  if (!prev) return next;
+  if (prev.free && !next.free) return next;
+  if (!prev.free && next.free) return prev;
+  if (next.confidence > prev.confidence) return next;
+  if (next.confidence === prev.confidence && next.amount > prev.amount) return next;
+  return prev;
+}
+
 export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
-  const billing =
-    'newer_than:18m (subject:subscription OR subject:invoice OR subject:renewal OR subject:membership OR subject:trial OR subject:subscribed OR subject:"payment confirmation" OR subject:"you\'ve been charged" OR subject:receipt OR subject:billing OR "free trial" OR "free plan" OR "you\'re subscribed")';
-  const ids = new Set(await listIds(token, billing, 50));
-  const list = [...ids].slice(0, 50);
+  const ids = new Set<string>();
+  for (const q of scanQueries()) {
+    const found = await listIds(token, q, 40);
+    found.forEach((id) => ids.add(id));
+    if (ids.size >= 80) break;
+  }
+
+  const list = [...ids].slice(0, 80);
   const findings = new Map<string, InboxFinding>();
 
   for (let i = 0; i < list.length; i += 6) {
@@ -123,14 +150,14 @@ export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
       const texts: string[] = [from, subject, msg.snippet ?? ""];
       collectText(msg.payload, texts);
       const blob = texts.join(" \n ").slice(0, 8000);
-      if (!isMembershipMail(subject, blob)) continue;
-      const { merchant, confidence } = matchDescriptor(`${from} ${subject}`);
+      if (!isMembershipMail(from, subject, blob)) continue;
+      const { merchant, confidence } = matchInboxMerchant(from, subject, blob);
       if (!merchant || confidence < 0.62) continue;
-      if (merchant.id === "google-play" && !/\b(subscription|trial)\b/i.test(`${subject} ${blob.slice(0, 800)}`)) {
+      if (merchant.id === "google-play" && !/\b(subscription|trial|membership)\b/i.test(`${subject} ${blob.slice(0, 800)}`)) {
         continue;
       }
-      const head = `${subject}\n${blob.slice(0, 1200)}`;
-      const parsed = parseAmount(blob);
+      const head = `${subject}\n${blob.slice(0, 1500)}`;
+      const parsed = parseChargeAmount(blob);
       const paid = parsed != null && parsed >= 0.5;
       const freeHint =
         isFreeMembership(head) || /\b(subscribed|free trial|free plan|free tier|trial)\b/i.test(head);
@@ -138,7 +165,6 @@ export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
       const free = !paid;
       const amount = paid ? parsed! : 0;
       const cycle = guessCycle(blob, merchant.cycle);
-      const prev = findings.get(merchant.id);
       const next: InboxFinding = {
         merchant,
         amount,
@@ -150,9 +176,7 @@ export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
         date: dateHdr || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : null),
         confidence,
       };
-      if (!prev) findings.set(merchant.id, next);
-      else if (prev.free && !next.free) findings.set(merchant.id, next);
-      else if (prev.free === next.free && confidence > prev.confidence) findings.set(merchant.id, next);
+      findings.set(merchant.id, keepFinding(findings.get(merchant.id), next));
     }
   }
 
