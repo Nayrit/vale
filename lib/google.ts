@@ -78,7 +78,7 @@ export function requestGoogleAccessToken(clientId: string, scope: string, prompt
           done(() =>
             reject(
               new Error(
-                "Google did not finish. Allow popups for this site, use http://localhost:3000, and check for a hidden Google window.",
+                `Google did not finish. In Google Cloud → Clients, add this exact origin (no trailing slash): ${window.location.origin}. Allow popups, then try again.`,
               ),
             ),
           );
@@ -96,7 +96,7 @@ export function requestGoogleAccessToken(clientId: string, scope: string, prompt
             if (type === "popup_closed") done(() => reject(new Error("Google window was closed before finishing.")));
             else if (type === "popup_failed_to_open")
               done(() => reject(new Error("The Google popup was blocked. Allow popups, then try again.")));
-            else done(() => reject(new Error(err.message || "Google sign-in failed.")));
+            else done(() => reject(new Error(err.message || `Google sign-in failed. Add ${window.location.origin} as an Authorized JavaScript origin on the OAuth client.`)));
           },
         });
         client.requestAccessToken(prompt ? { prompt } : {});

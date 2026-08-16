@@ -1,9 +1,11 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 
 const SRC = "/vale-logo.png";
-const WIDTH = 1024;
-const HEIGHT = 558;
+const WIDTH = 341;
+const HEIGHT = 352;
 
 const sizes = {
   sm: 112,
@@ -30,8 +32,9 @@ export function Logo({
       width={WIDTH}
       height={HEIGHT}
       priority={priority}
+      unoptimized
       className="h-auto"
-      style={{ width, height: "auto" }}
+      style={{ width, height: "auto", mixBlendMode: "multiply", background: "transparent" }}
     />
   );
 

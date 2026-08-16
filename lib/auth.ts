@@ -133,7 +133,7 @@ export function subscribeAuth(listener: () => void) {
 let snapshotCache: { user: AuthUser | null; googleClientId: string } | null = null;
 
 function currentGoogleClientId() {
-  return disk.googleClientId || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+  return (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "").trim() || disk.googleClientId || "";
 }
 
 export function getAuthSnapshot() {

@@ -1,8 +1,18 @@
-import { matchInboxMerchant, parseChargeAmount, isGoogleBillingSender } from "./inbox-match";
+import { getMerchant } from "./catalog";
+import {
+  matchInboxMerchant,
+  matchGoogleProduct,
+  parseChargeAmount,
+  htmlToText,
+  isLocalCurrency,
+  isBillingProcessor,
+} from "./inbox-match";
 import type { BillingCycle, Merchant } from "./types";
 
 export type InboxFinding = {
-  merchant: Merchant;
+  key: string;
+  merchant: Merchant | null;
+  name: string;
   amount: number;
   estimated: boolean;
   free: boolean;
@@ -13,16 +23,52 @@ export type InboxFinding = {
   confidence: number;
 };
 
+export type ScanProgress = { done: number; total: number; phase: string };
+
+export type InboxScanResult = {
+  findings: InboxFinding[];
+  missed: Merchant[];
+  scanned: number;
+  estimate: number;
+  mode: "all" | "billing";
+};
+
+/** Services Vale always reports as found or not-found after a scan. */
+export const INBOX_WATCHLIST_IDS = [
+  "google-one",
+  "gemini",
+  "chatgpt",
+  "claude",
+  "cursor",
+  "youtube-premium",
+  "spotify",
+  "netflix",
+  "apple-subscriptions",
+  "amazon-prime",
+  "adobe",
+  "icloud",
+  "microsoft-365",
+  "github-copilot",
+  "notion",
+] as const;
+
+type GmailPart = {
+  mimeType?: string;
+  body?: { data?: string; attachmentId?: string };
+  parts?: GmailPart[];
+};
+
 type GmailMessage = {
   id: string;
-  payload?: {
-    headers?: { name: string; value: string }[];
-    mimeType?: string;
-    body?: { data?: string };
-    parts?: GmailMessage["payload"][];
-  };
+  payload?: GmailPart & { headers?: { name: string; value: string }[] };
   snippet?: string;
   internalDate?: string;
+};
+
+type GmailList = {
+  messages?: { id: string }[];
+  nextPageToken?: string;
+  resultSizeEstimate?: number;
 };
 
 function header(msg: GmailMessage, name: string) {
@@ -37,19 +83,45 @@ function b64url(data: string) {
   return new TextDecoder().decode(bytes);
 }
 
-function collectText(part: GmailMessage["payload"] | undefined, into: string[]) {
-  if (!part) return;
-  if (part.body?.data && (part.mimeType === "text/plain" || part.mimeType === "text/html" || !part.mimeType)) {
-    let text = b64url(part.body.data);
-    if (part.mimeType === "text/html") {
-      text = text
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ");
-    }
-    into.push(text);
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function gmailGet<T>(token: string, path: string, attempt = 0): Promise<T> {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if ((res.status === 429 || res.status === 503) && attempt < 4) {
+    await sleep(800 * (attempt + 1));
+    return gmailGet<T>(token, path, attempt + 1);
   }
-  for (const child of part.parts ?? []) collectText(child, into);
+  if (res.status === 403) {
+    throw new Error(
+      "Gmail refused access. Enable the Gmail API and add gmail.readonly on the OAuth consent screen.",
+    );
+  }
+  if (res.status === 401) throw new Error("Google access expired. Allow inbox access again.");
+  if (!res.ok) throw new Error(`Gmail returned ${res.status}.`);
+  return res.json() as Promise<T>;
+}
+
+async function collectText(token: string, messageId: string, part: GmailPart | undefined, into: string[]) {
+  if (!part) return;
+  const mime = part.mimeType ?? "";
+  const isText = mime.startsWith("text/") || mime === "application/xhtml+xml" || !mime;
+  if (isText) {
+    let raw = "";
+    if (part.body?.data) raw = b64url(part.body.data);
+    else if (part.body?.attachmentId) {
+      const att = await gmailGet<{ data?: string }>(
+        token,
+        `messages/${messageId}/attachments/${part.body.attachmentId}`,
+      );
+      if (att.data) raw = b64url(att.data);
+    }
+    if (raw) into.push(mime.includes("html") ? htmlToText(raw) : raw);
+  }
+  for (const child of part.parts ?? []) await collectText(token, messageId, child, into);
 }
 
 function guessCycle(text: string, fallback: BillingCycle): BillingCycle {
@@ -60,61 +132,72 @@ function guessCycle(text: string, fallback: BillingCycle): BillingCycle {
 }
 
 const NOT_A_CHARGE =
-  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code|newsletter|we miss you|weekly digest|confirm your email|what's new|new features)\b/i;
+  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code)\b/i;
 
-const IS_MEMBERSHIP =
-  /\b(subscription|subscribed|invoice|renewal|renewed|membership|recurring|you've been charged|you have been charged|payment confirmation|auto[- ]?renew|billed you|your bill|free trial|free plan|free tier|free membership|trial (has )?started|you're subscribed|you are (now )?subscribed|google one|gemini advanced|google ai pro|ai premium)\b/i;
+const SHIPPING = /\b(shipped|out for delivery|tracking number|on the way|has been delivered)\b/i;
 
-const IS_FREE =
-  /\b(free trial|your free trial|start(ed)? your free|free plan|free tier|free membership|complimentary|no charge|no cost|\$0(?:\.00)?|trial (period|started|begins)|on the free (plan|tier)|welcome to .{0,48}(free|student))\b/i;
+const CHARGE_HINT =
+  /\b(subscription|subscribed|invoice|renewal|membership|recurring|receipt|billing|you've been charged|you have been charged|payment confirmation|free trial|free plan|google one|gemini|stripe|cursor|claude|anthropic|anysphere|billed|auto[- ]?renew|paid plan|premium|pro plan|plus plan)\b/i;
 
-function isMembershipMail(from: string, subject: string, blob: string) {
-  const head = `${from}\n${subject}\n${blob.slice(0, 1500)}`;
-  if (NOT_A_CHARGE.test(subject) || NOT_A_CHARGE.test(head)) return false;
-  if (isGoogleBillingSender(from)) {
-    return /\b(google one|gemini|youtube premium|ai pro|ai premium|membership|subscription|recurring|google ai)\b/i.test(
-      head,
-    );
+function looksLikeCharge(from: string, subject: string, blob: string) {
+  if (NOT_A_CHARGE.test(subject)) return false;
+  if (SHIPPING.test(subject) && !/\b(subscription|membership|renew)\b/i.test(subject + blob.slice(0, 400))) {
+    return false;
   }
-  if (IS_MEMBERSHIP.test(subject) || IS_MEMBERSHIP.test(head) || IS_FREE.test(head)) return true;
-  return (
-    /\breceipt\b/i.test(subject) &&
-    /\b(subscription|membership|premium|plus|plan|renew|recurring|monthly|annual|trial|google one|gemini)\b/i.test(head)
-  );
+  if (isBillingProcessor(from)) return true;
+  if (matchGoogleProduct(from, subject, blob)) return true;
+  return CHARGE_HINT.test(`${from}\n${subject}\n${blob}`);
 }
 
-function isFreeMembership(text: string) {
-  return IS_FREE.test(text) || /(?:^|[^\d])0\.00\b/.test(text);
-}
-
-async function gmailGet<T>(token: string, path: string): Promise<T> {
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 403) {
-    throw new Error(
-      "Gmail refused access. In Google Cloud, enable the Gmail API and add the Gmail readonly scope to the OAuth consent screen.",
-    );
+function displayName(from: string, subject: string) {
+  const fromName = from.match(/^"?([^"<@]+)"?\s*</);
+  if (fromName && !/noreply|no-reply|payments|stripe|receipt|invoice|mailer|support/i.test(fromName[1])) {
+    return fromName[1].trim();
   }
-  if (res.status === 401) throw new Error("Google access expired. Allow inbox access again.");
-  if (!res.ok) throw new Error(`Gmail returned ${res.status}.`);
-  return res.json() as Promise<T>;
+  const named = subject.match(/(?:from|for)\s+([A-Z][A-Za-z0-9 .&+-]{2,48})/);
+  if (named) return named[1].replace(/\s+inc\.?$/i, "").trim();
+  const domain = from.match(/@([a-z0-9-]+)\./i);
+  if (domain && !/gmail|googlemail|google|stripe|paypal|appleid|email|mailgun|sendgrid/i.test(domain[1])) {
+    return domain[1].replace(/-/g, " ");
+  }
+  return subject.replace(/^(your|re:|fwd:)\s+/i, "").slice(0, 48) || "Unknown charge";
 }
 
-async function listIds(token: string, q: string, maxResults: number) {
-  const data = await gmailGet<{ messages?: { id: string }[] }>(
-    token,
-    `messages?maxResults=${maxResults}&q=${encodeURIComponent(q)}`,
-  );
-  return data.messages?.map((m) => m.id) ?? [];
+async function listAllIds(
+  token: string,
+  q: string,
+  cap: number,
+  onPage?: (count: number) => void,
+) {
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  let estimate = 0;
+  while (ids.length < cap) {
+    const n = Math.min(100, cap - ids.length);
+    const path = pageToken
+      ? `messages?maxResults=${n}&q=${encodeURIComponent(q)}&pageToken=${encodeURIComponent(pageToken)}`
+      : `messages?maxResults=${n}&q=${encodeURIComponent(q)}`;
+    const data = await gmailGet<GmailList>(token, path);
+    estimate = data.resultSizeEstimate ?? estimate;
+    for (const m of data.messages ?? []) ids.push(m.id);
+    onPage?.(ids.length);
+    if (!data.nextPageToken || !data.messages?.length) {
+      return { ids, estimate, complete: true };
+    }
+    pageToken = data.nextPageToken;
+  }
+  return { ids, estimate, complete: false };
 }
 
-function scanQueries() {
+function billingQueries() {
   return [
-    'newer_than:18m from:payments-noreply@google.com',
-    'newer_than:18m from:googleone-noreply@google.com',
-    'newer_than:18m (subject:"Google One" OR subject:"Gemini Advanced" OR subject:"Google AI" OR subject:"AI Premium" OR subject:Gemini)',
-    'newer_than:18m (subject:subscription OR subject:invoice OR subject:renewal OR subject:membership OR subject:trial OR subject:subscribed OR subject:"payment confirmation" OR subject:"you\'ve been charged" OR subject:receipt OR subject:billing OR "free trial" OR "free plan" OR "you\'re subscribed")',
+    "newer_than:36m from:(stripe.com OR paypal.com OR apple.com OR google.com OR openai.com OR anthropic.com OR cursor.com OR anysphere.com OR github.com OR adobe.com OR spotify.com OR netflix.com OR microsoft.com OR dropbox.com OR notion.so OR paddle.com)",
+    "newer_than:36m (subject:receipt OR subject:invoice OR subject:subscription OR subject:renewal OR subject:membership OR subject:billing OR subject:payment)",
+    'newer_than:36m ("Google One" OR "Gemini Advanced" OR "Google AI Pro" OR "AI Premium" OR "Claude Pro" OR Anysphere OR Cursor OR ChatGPT OR OpenAI)',
+    'newer_than:36m (recurring OR "you\'ve been charged" OR "free trial" OR "free plan" OR subscribed OR "auto-renew")',
+    "newer_than:36m (label:purchases OR category:purchases)",
+    "newer_than:36m from:payments-noreply@google.com",
+    "newer_than:36m from:googleone-noreply@google.com",
   ];
 }
 
@@ -127,19 +210,53 @@ function keepFinding(prev: InboxFinding | undefined, next: InboxFinding) {
   return prev;
 }
 
-export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
+function findingKey(merchant: Merchant | null, name: string) {
+  return merchant?.id || `raw:${name.trim().toLowerCase()}`;
+}
+
+const ALL_MAIL = "in:anywhere -in:chats";
+const FULL_READ_CAP = 800;
+const BILLING_CAP = 900;
+const FULL_READ_IF_AT_MOST = 500;
+
+export async function scanGmailInbox(
+  token: string,
+  onProgress?: (p: ScanProgress) => void,
+): Promise<InboxScanResult> {
+  onProgress?.({ done: 0, total: 1, phase: "Counting mail" });
+  const sample = await gmailGet<GmailList>(
+    token,
+    `messages?maxResults=100&q=${encodeURIComponent(ALL_MAIL)}`,
+  );
+  const estimate = sample.resultSizeEstimate ?? sample.messages?.length ?? 0;
+  const firstComplete = !sample.nextPageToken;
+  const readAll = firstComplete || estimate <= FULL_READ_IF_AT_MOST;
+
   const ids = new Set<string>();
-  for (const q of scanQueries()) {
-    const found = await listIds(token, q, 40);
-    found.forEach((id) => ids.add(id));
-    if (ids.size >= 80) break;
+  (sample.messages ?? []).forEach((m) => ids.add(m.id));
+
+  if (readAll) {
+    onProgress?.({ done: ids.size, total: Math.min(estimate || ids.size, FULL_READ_CAP), phase: "Listing every message" });
+    const rest = await listAllIds(token, ALL_MAIL, FULL_READ_CAP, (count) => {
+      onProgress?.({ done: count, total: Math.min(estimate || count, FULL_READ_CAP), phase: "Listing every message" });
+    });
+    rest.ids.forEach((id) => ids.add(id));
+  } else {
+    const queries = billingQueries();
+    for (let i = 0; i < queries.length; i++) {
+      onProgress?.({ done: i, total: queries.length, phase: "Listing receipts" });
+      const found = await listAllIds(token, queries[i], 300);
+      found.ids.forEach((id) => ids.add(id));
+      if (ids.size >= BILLING_CAP) break;
+    }
   }
 
-  const list = [...ids].slice(0, 80);
+  const list = [...ids].slice(0, readAll ? FULL_READ_CAP : BILLING_CAP);
   const findings = new Map<string, InboxFinding>();
+  onProgress?.({ done: 0, total: list.length || 1, phase: "Reading messages" });
 
-  for (let i = 0; i < list.length; i += 6) {
-    const chunk = list.slice(i, i + 6);
+  for (let i = 0; i < list.length; i += 8) {
+    const chunk = list.slice(i, i + 8);
     const messages = await Promise.all(
       chunk.map((id) => gmailGet<GmailMessage>(token, `messages/${id}?format=full`)),
     );
@@ -148,37 +265,67 @@ export async function scanGmailInbox(token: string): Promise<InboxFinding[]> {
       const subject = header(msg, "Subject");
       const dateHdr = header(msg, "Date");
       const texts: string[] = [from, subject, msg.snippet ?? ""];
-      collectText(msg.payload, texts);
-      const blob = texts.join(" \n ").slice(0, 8000);
-      if (!isMembershipMail(from, subject, blob)) continue;
-      const { merchant, confidence } = matchInboxMerchant(from, subject, blob);
-      if (!merchant || confidence < 0.62) continue;
-      if (merchant.id === "google-play" && !/\b(subscription|trial|membership)\b/i.test(`${subject} ${blob.slice(0, 800)}`)) {
-        continue;
-      }
-      const head = `${subject}\n${blob.slice(0, 1500)}`;
+      await collectText(token, msg.id, msg.payload, texts);
+      const blob = texts.join(" \n ").slice(0, 24000);
+      if (!looksLikeCharge(from, subject, blob)) continue;
+
+      const matched = matchInboxMerchant(from, subject, blob);
+      const merchant = matched.merchant;
+      const name = merchant?.name || displayName(from, subject);
       const parsed = parseChargeAmount(blob);
-      const paid = parsed != null && parsed >= 0.5;
-      const freeHint =
-        isFreeMembership(head) || /\b(subscribed|free trial|free plan|free tier|trial)\b/i.test(head);
-      if (!paid && !freeHint) continue;
-      const free = !paid;
-      const amount = paid ? parsed! : 0;
-      const cycle = guessCycle(blob, merchant.cycle);
+      const local = isLocalCurrency(blob);
+      const paidUsd = parsed != null && parsed >= 0.5 && !local;
+      const processor = isBillingProcessor(from);
+      const free =
+        /\b(free trial|free plan|free tier|complimentary|no charge)\b/i.test(blob) && !paidUsd && parsed == null;
+
+      let amount = 0;
+      let estimated = false;
+      if (paidUsd) {
+        amount = parsed!;
+      } else if (free) {
+        amount = 0;
+      } else if (merchant) {
+        amount = merchant.typicalPrice;
+        estimated = true;
+      } else if (parsed != null && !local) {
+        amount = parsed;
+      } else {
+        estimated = true;
+      }
+
+      if (!merchant && !paidUsd && !free && !processor) continue;
+
       const next: InboxFinding = {
+        key: findingKey(merchant, name),
         merchant,
+        name,
         amount,
-        estimated: false,
+        estimated,
         free,
-        cycle,
+        cycle: guessCycle(blob, merchant?.cycle ?? "monthly"),
         from,
         subject,
         date: dateHdr || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : null),
-        confidence,
+        confidence: merchant ? matched.confidence : processor ? 0.6 : 0.5,
       };
-      findings.set(merchant.id, keepFinding(findings.get(merchant.id), next));
+      findings.set(next.key, keepFinding(findings.get(next.key), next));
     }
+    onProgress?.({
+      done: Math.min(i + chunk.length, list.length),
+      total: list.length || 1,
+      phase: "Reading messages",
+    });
   }
 
-  return [...findings.values()].sort((a, b) => b.amount - a.amount);
+  const foundIds = new Set([...findings.values()].map((f) => f.merchant?.id).filter(Boolean) as string[]);
+  const missed = INBOX_WATCHLIST_IDS.map((id) => getMerchant(id)).filter((m): m is Merchant => !!m && !foundIds.has(m.id));
+
+  return {
+    findings: [...findings.values()].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name)),
+    missed,
+    scanned: list.length,
+    estimate,
+    mode: readAll ? "all" : "billing",
+  };
 }

@@ -56,7 +56,7 @@ type Store = {
   importMatches: (matches: StatementMatch[]) => number;
   importInbox: (
     findings: {
-      merchantId: string;
+      merchantId: string | null;
       name: string;
       amount: number;
       cycle: BillingCycle;
@@ -262,12 +262,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let added = 0;
     patch((s) => {
       const have = new Set(
-        s.subscriptions.filter((sub) => sub.status !== "cancelled" && sub.merchantId).map((sub) => sub.merchantId),
+        s.subscriptions
+          .filter((sub) => sub.status !== "cancelled")
+          .map((sub) => sub.merchantId || sub.name.trim().toLowerCase()),
       );
       const next = [...s.subscriptions];
       for (const finding of findings) {
-        if (have.has(finding.merchantId)) continue;
-        have.add(finding.merchantId);
+        const key = finding.merchantId || finding.name.trim().toLowerCase();
+        if (have.has(key)) continue;
+        have.add(key);
         added += 1;
         next.unshift({
           id: uid(),

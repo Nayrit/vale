@@ -19,10 +19,24 @@ Open **[http://localhost:3000](http://localhost:3000)** — not `127.0.0.1`. Goo
 
 Google sign-in and inbox scan need a free OAuth **client ID**. Google does not charge for this. Create a Cloud project, enable the **Gmail API**, set the OAuth consent screen to **External**, add yourself as a **test user**, then create a **Web application** client.
 
-Authorized JavaScript origins:
+Authorized JavaScript origins (no path, no trailing slash):
 
 - `http://localhost:3000`
 - `http://127.0.0.1:3000`
+- `https://your-app.vercel.app` (and the `*.vercel.app` URL you actually open)
+
+## Vercel
+
+In the Vercel project: **Settings → Environment Variables**
+
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` = the same client ID as `.env.local`
+- `NEXT_PUBLIC_SITE_URL` = `https://your-app.vercel.app`
+
+Apply to Production, Preview, and Development. **Redeploy** after saving. `NEXT_PUBLIC_` values are baked in at build time — changing them without a new deploy does nothing.
+
+Then in Google Cloud → Clients → Vale, add that `https://….vercel.app` origin. Google’s “Something went wrong” popup is almost always a missing origin.
+
+Do not put the client secret in Vercel or Vale.
 
 Scopes: `email`, `profile`, `openid`, and `https://www.googleapis.com/auth/gmail.readonly`.
 

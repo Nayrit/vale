@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Field, inputClass } from "@/components/ui";
 import { authBtn } from "@/components/auth/frame";
 import { GOOGLE_PROFILE_SCOPES, googleUserInfo, requestGoogleAccessToken } from "@/lib/google";
+import { envGoogleClientId, siteOrigin } from "@/lib/site";
 
 export function GoogleButton({
   label,
@@ -16,15 +17,18 @@ export function GoogleButton({
   onBusy?: (busy: boolean) => void;
 }) {
   const { googleClientId, setGoogleClientId, signInWithGoogle } = useAuth();
+  const baked = envGoogleClientId();
+  const clientId = baked || googleClientId;
   const [setup, setSetup] = useState(false);
-  const [draft, setDraft] = useState(googleClientId);
+  const [draft, setDraft] = useState(clientId);
   const [busy, setBusy] = useState(false);
+  const origin = siteOrigin();
 
-  async function run(clientId: string) {
+  async function run(id: string) {
     setBusy(true);
     onBusy?.(true);
     try {
-      const token = await requestGoogleAccessToken(clientId, GOOGLE_PROFILE_SCOPES, "select_account");
+      const token = await requestGoogleAccessToken(id, GOOGLE_PROFILE_SCOPES, "select_account");
       const profile = await googleUserInfo(token);
       const result = await signInWithGoogle(profile);
       if (!result.ok) onError(result.error);
@@ -38,11 +42,11 @@ export function GoogleButton({
 
   function onClick() {
     onError("");
-    if (!googleClientId) {
+    if (!clientId) {
       setSetup(true);
       return;
     }
-    void run(googleClientId);
+    void run(clientId);
   }
 
   return (
@@ -57,18 +61,20 @@ export function GoogleButton({
         <GoogleMark />
         {busy ? "Connecting…" : label}
       </button>
-      {setup ? (
+      {setup && !baked ? (
         <div className="rounded-2xl bg-[#f3eee4] p-4 ring-1 ring-[#1a1713]/10">
           <p className="text-sm leading-relaxed text-[#1a1713]">
-            Add a Google Cloud web client ID (Authorized JavaScript origins: this site, e.g. http://localhost:3000). Enable
-            the Gmail API if you want inbox scanning.
+            This deploy is missing a Google client ID. In Vercel → Settings → Environment Variables add{" "}
+            <span className="font-mono text-xs">NEXT_PUBLIC_GOOGLE_CLIENT_ID</span>, then redeploy. In Google Cloud →
+            Clients, Authorized JavaScript origins must include <span className="font-mono text-xs">{origin}</span>{" "}
+            (no trailing slash).
           </p>
           <Field label="Google client ID">
             <input
               className={inputClass}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="123.apps.googleusercontent.com"
+              placeholder="….apps.googleusercontent.com"
               autoComplete="off"
             />
           </Field>
