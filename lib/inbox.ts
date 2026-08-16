@@ -5,15 +5,13 @@ import {
   parseLocalAmount,
   htmlToText,
   isLocalCurrency,
-  isBillingProcessor,
   isMembershipMail,
   hasBillingEvidence,
-  hasPlanConfirm,
   amountFitsCatalog,
   watchlistHits,
   isPolicyMail,
   isStripeSender,
-  matchAccountMailbox,
+  isSignInOrMarketing,
   type MailHeaders,
 } from "./inbox-match";
 import type { BillingCycle, Merchant } from "./types";
@@ -304,20 +302,21 @@ export async function scanGmailInbox(
       await collectText(token, msg.id, msg.payload, texts);
       const blob = texts.join(" \n ").slice(0, 24000);
       const named = watchlistHits(from, subject);
-      const policy = isPolicyMail(subject, blob) && !isStripeSender(from) && !matchAccountMailbox(from);
-      if (policy || !isMembershipMail(headers, blob)) {
-        for (const m of named) {
-          if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
-          if (!mentions.has(m.id)) {
-            mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
+      const policy = isPolicyMail(subject, blob) && !isStripeSender(from);
+      if (isSignInOrMarketing(subject) || policy || !isMembershipMail(headers, blob)) {
+        if (!isSignInOrMarketing(subject)) {
+          for (const m of named) {
+            if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
+            if (!mentions.has(m.id)) {
+              mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
+            }
           }
         }
         continue;
       }
 
-      const account = matchAccountMailbox(from);
       const matched = matchInboxMerchant(from, subject, blob);
-      const merchant = matched.merchant || account;
+      const merchant = matched.merchant;
       const name = merchant?.name || displayName(from, subject);
       let parsed = parseChargeAmount(blob);
       const local = isLocalCurrency(blob);
@@ -327,69 +326,31 @@ export async function scanGmailInbox(
         const last = dollars.at(-1)?.[1];
         if (last) {
           const n = Number(last.replace(/,/g, ""));
-          if (Number.isFinite(n) && n >= 0.5 && n < 500) parsed = n;
+          if (Number.isFinite(n) && n >= 0.5 && n < 200) parsed = n;
         }
       }
-      const parsedUsd = parsed != null && parsed >= 0.5 && !local;
+      const parsedUsd = parsed != null && parsed >= 0.5 && parsed < 200 && !local;
       const paidUsd =
         parsedUsd && (!merchant || amountFitsCatalog(parsed!, merchant.typicalPrice));
-      const processor = isBillingProcessor(from) || isStripeSender(from);
       const billing = hasBillingEvidence(from, subject, blob) || isStripeSender(from);
-      const plan = hasPlanConfirm(subject, blob);
-      const saysFree =
-        /\b(free trial|free plan|free tier|free access|free copilot|your free|complimentary|no charge)\b/i.test(
-          `${subject}\n${blob.slice(0, 1500)}`,
-        );
-      const free = saysFree && !paidUsd && !isStripeSender(from);
+      const cycle = guessCycle(blob, merchant?.cycle ?? "monthly");
 
-      let amount = 0;
-      let estimated = false;
-      let kind: InboxFinding["kind"] = "receipt";
-      if (free) {
-        amount = 0;
-        kind = "plan";
-      } else if (paidUsd) {
-        amount = parsed!;
-        kind = "receipt";
-      } else if (localMoney && billing) {
-        amount = merchant?.typicalPrice ?? 0;
-        estimated = !!merchant;
-        kind = "receipt";
-      } else if (billing && processor && !account) {
-        amount = 0;
-        kind = "receipt";
-      } else if (account) {
-        amount = merchant?.typicalPrice ?? 0;
-        estimated = true;
-        kind = "account";
-      } else if (plan && merchant) {
-        amount = 0;
-        kind = "plan";
-      } else {
-        for (const m of named.length ? named : merchant ? [merchant] : []) {
-          if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
-          if (!mentions.has(m.id)) {
-            mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
-          }
-        }
-        continue;
-      }
-
-      if (free && !merchant && !processor) continue;
+      if (!merchant) continue;
+      if (!paidUsd && !billing) continue;
 
       const next: InboxFinding = {
         key: findingKey(merchant, name),
         merchant,
         name,
-        amount,
-        estimated,
-        free,
-        cycle: guessCycle(blob, merchant?.cycle ?? "monthly"),
+        amount: paidUsd ? parsed! : 0,
+        estimated: false,
+        free: false,
+        cycle,
         from,
         subject,
         date: dateHdr || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : null),
-        confidence: merchant ? matched.confidence || 0.9 : processor ? 0.6 : 0.5,
-        kind,
+        confidence: matched.confidence,
+        kind: "receipt",
         localLabel: local && localMoney ? localMoney.label : null,
       };
       findings.set(next.key, keepFinding(findings.get(next.key), next));

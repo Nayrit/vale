@@ -97,7 +97,13 @@ export function isPolicyMail(subject: string, blob: string) {
 }
 
 const PASSWORD =
-  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code)\b/i;
+  /\b(password|passcode|sign[- ]?in code|verification code|security alert|new device|unusual activity|reset your|two[- ]step|2fa|otp|login code|new sign[- ]?in|sign[- ]?in to your|signed in to)\b/i;
+
+const MARKETING =
+  /\b(introducing|year in (code|review)|meet [a-z0-9]|what'?s new|product update|changelog|new sign[- ]?in)\b/i;
+
+const RECURRING =
+  /\b(subscription|membership|recurring|auto[- ]?renew|renewal|next billing|billed (monthly|annually|yearly)|pro plan|plus plan|your plan)\b/i;
 
 const SHIPPING = /\b(shipped|out for delivery|tracking number|on the way|has been delivered)\b/i;
 
@@ -112,9 +118,13 @@ export function hasPlanConfirm(subject: string, blob: string) {
   return PLAN_CONFIRM.test(`${subject}\n${blob.slice(0, 2000)}`);
 }
 
+export function isSignInOrMarketing(subject: string) {
+  return PASSWORD.test(subject) || MARKETING.test(subject);
+}
+
 export function isNewsletter(headers: MailHeaders, blob: string) {
-  if (isStripeSender(headers.from) || matchAccountMailbox(headers.from)) return false;
-  if (hasBillingEvidence(headers.from, headers.subject, blob) || hasPlanConfirm(headers.subject, blob)) {
+  if (isStripeSender(headers.from) && SUBJECT_RECEIPT.test(headers.subject)) return false;
+  if (hasBillingEvidence(headers.from, headers.subject, blob) && RECURRING.test(`${headers.subject}\n${blob.slice(0, 800)}`)) {
     return false;
   }
   if (NEWSLETTER.test(headers.subject)) return true;
@@ -123,7 +133,7 @@ export function isNewsletter(headers: MailHeaders, blob: string) {
 }
 
 export function isMembershipMail(headers: MailHeaders, blob: string) {
-  if (PASSWORD.test(headers.subject)) return false;
+  if (isSignInOrMarketing(headers.subject)) return false;
   if (
     isPolicyMail(headers.subject, blob) &&
     !isStripeSender(headers.from) &&
@@ -136,23 +146,20 @@ export function isMembershipMail(headers: MailHeaders, blob: string) {
   }
   if (isNewsletter(headers, blob)) return false;
 
-  if (isStripeSender(headers.from)) return true;
-  if (matchAccountMailbox(headers.from)) return true;
-  if (SUBJECT_RECEIPT.test(headers.subject)) return true;
-
-  const processor = isBillingProcessor(headers.from);
+  const catalog =
+    matchDescriptor(headers.subject).merchant ||
+    matchDescriptor(headers.from).merchant ||
+    matchProductSender(headers.from);
+  const billing = hasBillingEvidence(headers.from, headers.subject, blob) || SUBJECT_RECEIPT.test(headers.subject);
+  const recurring = RECURRING.test(`${headers.subject}\n${blob.slice(0, 2500)}`);
+  const stripe = isStripeSender(headers.from);
   const googlePay = isGoogleBillingSender(headers.from);
-  const product =
-    matchProductSender(headers.from) ||
-    (/\bgithub\.(com|io)\b/i.test(headers.from) ? getMerchant("github-copilot") : null);
-  const billing = hasBillingEvidence(headers.from, headers.subject, blob);
-  const plan = hasPlanConfirm(headers.subject, blob);
-  const named = matchDescriptor(headers.subject);
+  const processor = isBillingProcessor(headers.from);
 
   if (googlePay && billing) return true;
-  if (processor && billing) return true;
-  if (product && (billing || plan)) return true;
-  if (billing && named.merchant) return true;
+  if (stripe && catalog && billing) return true;
+  if (processor && catalog && billing && recurring) return true;
+  if (catalog && billing && recurring) return true;
   return false;
 }
 

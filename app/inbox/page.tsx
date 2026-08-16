@@ -61,7 +61,9 @@ export default function InboxPage() {
         throw new Error(`Google opened ${profile.email}. Switch to ${email} so Vale reads the matching inbox.`);
       }
       const result = await scanGmailInbox(token, setProgress);
-      const remembered: InboxFinding[] = (state.inboxDiscoveries ?? []).map((d) => ({
+      const remembered: InboxFinding[] = (state.inboxDiscoveries ?? [])
+        .filter((d) => d.kind === "receipt" && !d.estimated && d.amount > 0)
+        .map((d) => ({
         key: d.merchantId || `raw:${d.name.trim().toLowerCase()}`,
         merchant: getMerchant(d.merchantId),
         name: d.name,
@@ -79,7 +81,9 @@ export default function InboxPage() {
       const merged = mergeFindings(result.findings, remembered);
       const foundIds = new Set(merged.map((f) => f.merchant?.id).filter(Boolean) as string[]);
       rememberInbox(
-        merged.map(
+        merged
+          .filter((f) => f.kind === "receipt" && !f.estimated && f.amount > 0)
+          .map(
           (f): InboxDiscovery => ({
             merchantId: f.merchant?.id ?? null,
             name: f.name,
@@ -102,12 +106,7 @@ export default function InboxPage() {
         mode: result.mode,
       });
       setSelected(
-        Object.fromEntries(
-          merged.map((f) => [
-            f.key,
-            f.free || f.kind === "account" || f.kind === "receipt" || (!f.estimated && f.amount > 0),
-          ]),
-        ),
+        Object.fromEntries(merged.map((f) => [f.key, f.amount > 0 && !f.estimated])),
       );
       setInboxPrompt("allowed");
       setStep("review");
@@ -138,29 +137,14 @@ export default function InboxPage() {
     router.push("/");
   }
 
-  function addMention(m: InboxMention) {
-    const merchant = getMerchant(m.merchantId);
-    const n = importInbox([
-      {
-        merchantId: m.merchantId,
-        name: merchant?.name ?? m.name,
-        amount: merchant?.typicalPrice ?? 0,
-        cycle: merchant?.cycle ?? "monthly",
-        bankDescriptor: m.subject || m.from,
-      },
-    ]);
-    toast(n ? `Added ${merchant?.name ?? m.name} at typical price.` : "That was already on the ledger.");
-    setMentions((list) => list.filter((x) => x.merchantId !== m.merchantId));
-  }
-
   return (
     <div className="mx-auto max-w-2xl">
       <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Your inbox</p>
       <h1 className="serif mt-3 text-5xl leading-tight">What this inbox holds</h1>
       <p className="mt-4 text-lg leading-relaxed text-[#3d3830]">
-        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale reads the
-        mailbox, then sorts it: memberships with a receipt or plan mail, brands named in other mail (not bills), and
-        services with no mail at all. Read-only.
+        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale lists charges
+        it can prove — a Stripe/Google/Apple receipt with an amount. A sign-in, a “Meet Claude” mail, or a shop
+        receipt is not a subscription.
       </p>
 
       {step === "ask" || step === "scan" ? (
@@ -348,7 +332,7 @@ export default function InboxPage() {
                 Named in mail, not a bill
               </p>
               <p className="mt-2 text-sm leading-relaxed text-[#3d3830]">
-                Someone else’s mail named these. Vale did not find an account or a receipt on this address.
+                Mail named these. There was no charge Vale could prove — sign-in, marketing, or a one-off receipt.
               </p>
               <ul className="mt-5 grid gap-3">
                 {mentions.map((m) => (
@@ -361,13 +345,6 @@ export default function InboxPage() {
                       <span className="block font-medium">{m.name}</span>
                       <span className="block truncate text-sm text-[#3d3830]">{m.subject || m.from}</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => addMention(m)}
-                      className="shrink-0 text-sm font-medium underline decoration-[#1a1713]/30 underline-offset-4"
-                    >
-                      Add typical
-                    </button>
                   </li>
                 ))}
               </ul>
