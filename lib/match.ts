@@ -9,7 +9,7 @@ function normalize(s: string) {
     .trim();
 }
 
-function parseAmount(line: string): number | null {
+export function parseAmount(line: string): number | null {
   const matches = [...line.matchAll(/-?\$?\d{1,4}(?:,\d{3})*(?:\.\d{2})/g)];
   if (!matches.length) return null;
   const last = matches[matches.length - 1][0].replace(/[$,]/g, "");

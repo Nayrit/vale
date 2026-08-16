@@ -16,12 +16,22 @@ export default function AccountPage() {
       </p>
 
       <div className="mt-10 rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
+        <h2 className="serif text-2xl italic">Inbox</h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#1a1713]">
+          Vale only reads billing mail if you allow it. Access is read-only, for this address, and you choose what lands
+          on the ledger.
+        </p>
+        <Button href="/inbox" className="mt-5">
+          Scan this inbox
+        </Button>
+      </div>
+
+      <div className="mt-6 rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
         <h2 className="serif text-2xl italic">Privacy</h2>
         <ul className="mt-4 grid gap-3 text-[15px] leading-relaxed text-[#1a1713]">
-          <li>Vale does not scrape or read your email.</li>
-          <li>Google sign-in only receives your name and email. It cannot open Gmail.</li>
+          <li>Nothing is scraped until you press Allow on the inbox screen.</li>
+          <li>Gmail access is read-only. Vale cannot send, delete, or change mail.</li>
           <li>Your password never leaves this browser. There is no Vale server for this module.</li>
-          <li>You add charges by pasting a statement or typing them in.</li>
         </ul>
       </div>
 

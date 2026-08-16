@@ -4,45 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Field, inputClass } from "@/components/ui";
 import { authBtn } from "@/components/auth/frame";
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (cfg: {
-            client_id: string;
-            scope: string;
-            callback: (res: { access_token?: string; error?: string }) => void;
-          }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
-        };
-      };
-    };
-  }
-}
-
-let gisPromise: Promise<void> | null = null;
-
-function loadGis() {
-  if (typeof window === "undefined") return Promise.reject(new Error("No window"));
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
-  if (gisPromise) return gisPromise;
-  gisPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Google failed to load")));
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Google failed to load"));
-    document.head.appendChild(script);
-  });
-  return gisPromise;
-}
+import { GOOGLE_PROFILE_SCOPES, googleUserInfo, requestGoogleAccessToken } from "@/lib/google";
 
 export function GoogleButton({
   label,
@@ -62,48 +24,13 @@ export function GoogleButton({
     setBusy(true);
     onBusy?.(true);
     try {
-      await loadGis();
-      if (!window.google?.accounts?.oauth2) throw new Error("Google SDK missing");
-      const client = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "email profile openid",
-        callback: async (res) => {
-          if (!res.access_token) {
-            onError("Google sign-in was cancelled.");
-            setBusy(false);
-            onBusy?.(false);
-            return;
-          }
-          try {
-            const info = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: `Bearer ${res.access_token}` },
-            });
-            if (!info.ok) throw new Error("profile");
-            const profile = (await info.json()) as {
-              sub?: string;
-              email?: string;
-              name?: string;
-              picture?: string;
-            };
-            if (!profile.sub || !profile.email) throw new Error("profile");
-            const result = await signInWithGoogle({
-              googleId: profile.sub,
-              email: profile.email,
-              name: profile.name || profile.email,
-              picture: profile.picture ?? null,
-            });
-            if (!result.ok) onError(result.error);
-          } catch {
-            onError("Google signed in, but Vale could not read your profile.");
-          } finally {
-            setBusy(false);
-            onBusy?.(false);
-          }
-        },
-      });
-      client.requestAccessToken({ prompt: "select_account" });
-    } catch {
-      onError("Google could not load. Check your connection and try again.");
+      const token = await requestGoogleAccessToken(clientId, GOOGLE_PROFILE_SCOPES, "select_account");
+      const profile = await googleUserInfo(token);
+      const result = await signInWithGoogle(profile);
+      if (!result.ok) onError(result.error);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Google could not sign you in.");
+    } finally {
       setBusy(false);
       onBusy?.(false);
     }
@@ -124,7 +51,7 @@ export function GoogleButton({
         type="button"
         onClick={onClick}
         disabled={busy}
-        className={`${authBtn} bg-white text-[#1a1713] ring-2 ring-[#1a1713]`}
+        className={`${authBtn} bg-white ring-2 ring-[#1a1713]`}
         style={{ color: "#1a1713" }}
       >
         <GoogleMark />
@@ -133,8 +60,8 @@ export function GoogleButton({
       {setup ? (
         <div className="rounded-2xl bg-[#f3eee4] p-4 ring-1 ring-[#1a1713]/10">
           <p className="text-sm leading-relaxed text-[#1a1713]">
-            Add a Google Cloud web client ID (Authorized JavaScript origins: this site, e.g. http://localhost:3000). Vale
-            only asks Google for your name and email.
+            Add a Google Cloud web client ID (Authorized JavaScript origins: this site, e.g. http://localhost:3000). Enable
+            the Gmail API if you want inbox scanning.
           </p>
           <Field label="Google client ID">
             <input

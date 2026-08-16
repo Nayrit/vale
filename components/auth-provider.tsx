@@ -67,20 +67,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOutAuth();
   }, []);
 
+  const signUpAndLoad = useCallback(
+    async (input: { name: string; email: string; password: string }) => {
+      const result = await signUp(input);
+      if (result.ok) switchUser(result.user.id, { name: result.user.name, email: result.user.email });
+      return result;
+    },
+    [switchUser],
+  );
+
+  const signInAndLoad = useCallback(
+    async (input: { email: string; password: string }) => {
+      const result = await signIn(input);
+      if (result.ok) switchUser(result.user.id, { name: result.user.name, email: result.user.email });
+      return result;
+    },
+    [switchUser],
+  );
+
+  const signInWithGoogleAndLoad = useCallback(
+    async (profile: { googleId: string; email: string; name: string; picture: string | null }) => {
+      const result = await signInWithGoogle(profile);
+      if (result.ok) switchUser(result.user.id, { name: result.user.name, email: result.user.email });
+      return result;
+    },
+    [switchUser],
+  );
+
   const value = useMemo<AuthCtx>(
     () => ({
       ready,
       user: snap.user,
       googleClientId: snap.googleClientId,
       setGoogleClientId,
-      signUp,
-      signIn,
-      signInWithGoogle,
+      signUp: signUpAndLoad,
+      signIn: signInAndLoad,
+      signInWithGoogle: signInWithGoogleAndLoad,
       requestReset,
       resetPassword,
       signOut,
     }),
-    [ready, snap.user, snap.googleClientId, signOut],
+    [ready, snap.user, snap.googleClientId, signUpAndLoad, signInAndLoad, signInWithGoogleAndLoad, signOut],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

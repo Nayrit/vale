@@ -3,20 +3,18 @@
 import Link from "next/link";
 import { getMerchant } from "@/lib/catalog";
 import { daysSince, unusedCopy } from "@/lib/dates";
-import { cycleLabel, monthlyOfSub, usd } from "@/lib/money";
+import { cycleLabel, usd } from "@/lib/money";
 import type { Subscription } from "@/lib/types";
 import { Difficulty, MerchantMark } from "@/components/ui";
 
 export function SubCard({
   sub,
-  quiet,
 }: {
   sub: Subscription;
   quiet?: boolean;
 }) {
   const merchant = getMerchant(sub.merchantId);
   const days = daysSince(sub.lastUsedAt);
-  const monthly = monthlyOfSub(sub);
 
   return (
     <article className="grid gap-4 rounded-[1.75rem] bg-cream/70 p-5 ring-1 ring-ink/8 transition duration-300 hover:-translate-y-0.5 hover:bg-cream hover:shadow-[0_20px_50px_-28px_rgba(26,23,18,0.35)] sm:grid-cols-[auto_1fr_auto] sm:items-center">
@@ -28,6 +26,7 @@ export function SubCard({
             {merchant ? <Difficulty level={merchant.cancelDifficulty} /> : null}
           </div>
           <p className="mt-1 text-sm text-muted">
+            {sub.source === "inbox" ? <span className="mr-2">From inbox</span> : null}
             {sub.bankDescriptor ? (
               <span className="mr-2 font-mono text-[11px] tracking-wide">{sub.bankDescriptor}</span>
             ) : null}
@@ -42,15 +41,14 @@ export function SubCard({
         </p>
         {sub.status === "cancelled" ? (
           <p className="text-[11px] uppercase tracking-[0.16em] text-muted">ended</p>
-        ) : quiet ? (
+        ) : (
           <Link
             href={`/cancel/${sub.id}`}
-            className="rounded-full bg-clay px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-cream"
+            className="rounded-full bg-[#b44528] px-3 py-1 text-[11px] uppercase tracking-[0.16em]"
+            style={{ color: "#ffffff" }}
           >
             Cancel
           </Link>
-        ) : (
-          <p className="text-[11px] uppercase tracking-[0.16em] text-muted">{usd(monthly)} / mo</p>
         )}
       </div>
     </article>

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { AuthError, AuthFrame, OrLine, authBtn } from "@/components/auth/frame";
 import { GoogleButton } from "@/components/auth/google-button";
@@ -10,7 +9,6 @@ import { useAuth } from "@/components/auth-provider";
 import { Field, inputClass } from "@/components/ui";
 
 export default function SignupPage() {
-  const router = useRouter();
   const { signUp } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,14 +31,13 @@ export default function SignupPage() {
       setError(result.error);
       return;
     }
-    router.replace("/");
   }
 
   return (
     <AuthFrame
       kicker="New ledger"
       title="Create an account"
-      lede="Name, email, and a password — or Google. Vale still will not open your mail."
+      lede="Use a real email. After you create the account, Vale asks permission to find subscriptions in that inbox."
     >
       <GoogleButton label="Sign up with Google" onError={setError} onBusy={setBusy} />
       <OrLine />

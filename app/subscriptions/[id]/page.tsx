@@ -67,7 +67,9 @@ export default function SubscriptionPage() {
       </div>
 
       {sub.bankDescriptor ? (
-        <p className="mt-6 font-mono text-sm text-muted">Bank shows {sub.bankDescriptor}</p>
+        <p className="mt-6 font-mono text-sm text-muted">
+          {sub.source === "inbox" ? "Inbox showed" : "Bank shows"} {sub.bankDescriptor}
+        </p>
       ) : null}
 
       {merchant?.notice ? (

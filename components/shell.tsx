@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 
 const links = [
   { href: "/", label: "Home" },
+  { href: "/inbox", label: "Inbox" },
   { href: "/import", label: "Statement" },
   { href: "/catalog", label: "Catalog" },
   { href: "/add", label: "Add" },
@@ -18,7 +19,7 @@ const links = [
 const AUTH_ROUTES = new Set(["/login", "/signup", "/forgot"]);
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { ready } = useStore();
+  const { ready, state } = useStore();
   const auth = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -43,8 +44,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!auth.ready) return;
     if (!auth.user && !isAuthRoute) router.replace("/login");
-    if (auth.user && isAuthRoute) router.replace("/");
-  }, [auth.ready, auth.user, isAuthRoute, router]);
+    if (auth.user && isAuthRoute) {
+      const ledgerReady =
+        state.profile?.email.trim().toLowerCase() === auth.user.email.trim().toLowerCase();
+      if (!ledgerReady) return;
+      router.replace(state.inboxPrompt === "pending" ? "/inbox" : "/");
+    }
+  }, [auth.ready, auth.user, isAuthRoute, router, state.profile?.email, state.inboxPrompt]);
 
   if (!ready || !auth.ready) {
     return (

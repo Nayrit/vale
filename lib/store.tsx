@@ -28,6 +28,8 @@ const empty: AppState = {
   unusedDays: 60,
   subscriptions: [],
   savings: [],
+  inboxPrompt: "pending",
+  inboxScannedAt: null,
 };
 
 type Store = {
@@ -50,6 +52,17 @@ type Store = {
   confirmCancel: (id: string) => void;
   restore: (id: string) => void;
   importMatches: (matches: StatementMatch[]) => number;
+  importInbox: (
+    findings: {
+      merchantId: string;
+      name: string;
+      amount: number;
+      cycle: BillingCycle;
+      bankDescriptor?: string;
+    }[],
+  ) => number;
+  setInboxPrompt: (value: AppState["inboxPrompt"]) => void;
+  setInboxScannedAt: (iso: string | null) => void;
   setPlan: (plan: Plan) => void;
   setUnusedDays: (n: number) => void;
   reset: () => void;
@@ -113,6 +126,7 @@ function applyImport(s: AppState, matches: StatementMatch[]) {
       nextChargeAt: daysFromNowIso(merchant.cycle === "yearly" ? 365 : 30),
       status: "active",
       bankDescriptor: match.descriptor,
+      source: "statement" as const,
     });
   }
   return { state: { ...s, subscriptions: next }, added };
@@ -162,6 +176,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       status: "active",
       bankDescriptor: input.bankDescriptor,
       notes: input.notes,
+      source: "manual",
     };
     patch((s) => ({ ...s, subscriptions: [sub, ...s.subscriptions] }));
     return id;
@@ -242,6 +257,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return next.added;
   }, []);
 
+  const importInbox: Store["importInbox"] = useCallback((findings) => {
+    let added = 0;
+    patch((s) => {
+      const have = new Set(
+        s.subscriptions.filter((sub) => sub.status !== "cancelled" && sub.merchantId).map((sub) => sub.merchantId),
+      );
+      const next = [...s.subscriptions];
+      for (const finding of findings) {
+        if (have.has(finding.merchantId)) continue;
+        have.add(finding.merchantId);
+        added += 1;
+        next.unshift({
+          id: uid(),
+          merchantId: finding.merchantId,
+          name: finding.name,
+          amount: finding.amount,
+          cycle: finding.cycle,
+          lastUsedAt: null,
+          startedAt: new Date().toISOString(),
+          nextChargeAt: daysFromNowIso(finding.cycle === "yearly" ? 365 : finding.cycle === "weekly" ? 7 : 30),
+          status: "active",
+          bankDescriptor: finding.bankDescriptor,
+          source: "inbox",
+        });
+      }
+      return { ...s, subscriptions: next, inboxPrompt: "allowed", inboxScannedAt: new Date().toISOString() };
+    });
+    return added;
+  }, [patch]);
+
+  const setInboxPrompt: Store["setInboxPrompt"] = useCallback(
+    (value) => patch((s) => ({ ...s, inboxPrompt: value })),
+    [patch],
+  );
+
+  const setInboxScannedAt: Store["setInboxScannedAt"] = useCallback(
+    (iso) => patch((s) => ({ ...s, inboxScannedAt: iso })),
+    [patch],
+  );
+
   const setPlan: Store["setPlan"] = useCallback(
     (plan) => patch((s) => ({ ...s, plan })),
     [patch],
@@ -270,6 +325,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       confirmCancel,
       restore,
       importMatches,
+      importInbox,
+      setInboxPrompt,
+      setInboxScannedAt,
       setPlan,
       setUnusedDays,
       reset,
@@ -286,6 +344,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       confirmCancel,
       restore,
       importMatches,
+      importInbox,
+      setInboxPrompt,
+      setInboxScannedAt,
       setPlan,
       setUnusedDays,
       reset,

@@ -23,7 +23,7 @@ export function AuthFrame({
           </Link>
           <p className="mt-8 max-w-md text-2xl leading-snug text-[#1a1713]">{lede}</p>
           <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-[#3d3830]">
-            Vale does not read your inbox. Google is only used to sign you in — never to scan mail or find subscriptions.
+            After you sign in, Vale asks permission to read billing mail for that address. Nothing is scanned unless you allow it.
           </p>
         </div>
         <div>

@@ -52,6 +52,7 @@ export type Subscription = {
   bankDescriptor?: string;
   notes?: string;
   cancelledAt?: string;
+  source?: "inbox" | "statement" | "manual";
 };
 
 export type SavingsEvent = {
@@ -73,6 +74,8 @@ export type AppState = {
   unusedDays: number;
   subscriptions: Subscription[];
   savings: SavingsEvent[];
+  inboxPrompt: "pending" | "allowed" | "skipped";
+  inboxScannedAt: string | null;
 };
 
 export type StatementMatch = {

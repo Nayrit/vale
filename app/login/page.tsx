@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { AuthError, AuthFrame, OrLine, authBtn } from "@/components/auth/frame";
 import { GoogleButton } from "@/components/auth/google-button";
@@ -10,7 +9,6 @@ import { useAuth } from "@/components/auth-provider";
 import { Field, inputClass } from "@/components/ui";
 
 export default function LoginPage() {
-  const router = useRouter();
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,14 +25,13 @@ export default function LoginPage() {
       setError(result.error);
       return;
     }
-    router.replace("/");
   }
 
   return (
     <AuthFrame
       kicker="Welcome back"
       title="Sign in"
-      lede="Your ledger is waiting. Sign in with email or Google — nothing else is connected."
+      lede="Sign in with the email you actually use. Vale will then ask to look for subscriptions in that inbox."
     >
       <GoogleButton label="Continue with Google" onError={setError} onBusy={setBusy} />
       <OrLine />
