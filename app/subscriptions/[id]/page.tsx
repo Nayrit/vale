@@ -41,10 +41,19 @@ export default function SubscriptionPage() {
             {merchant ? <Difficulty level={merchant.cancelDifficulty} /> : null}
           </div>
           <p className="serif mt-4 text-4xl">
-            {usd(sub.amount)}
-            <span className="ml-2 text-base text-muted">
-              /{cycleLabel(sub.cycle)} · {usd(yearly)} a year
-            </span>
+            {sub.amount === 0 ? (
+              <>
+                Free
+                <span className="ml-2 text-base text-muted">no charge yet</span>
+              </>
+            ) : (
+              <>
+                {usd(sub.amount)}
+                <span className="ml-2 text-base text-muted">
+                  /{cycleLabel(sub.cycle)} · {usd(yearly)} a year
+                </span>
+              </>
+            )}
           </p>
         </div>
       </div>

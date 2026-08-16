@@ -36,8 +36,14 @@ export function SubCard({
       </Link>
       <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
         <p className="serif text-2xl leading-none">
-          {usd(sub.amount)}
-          <span className="ml-1 text-sm not-italic text-muted">/{cycleLabel(sub.cycle)}</span>
+          {sub.amount === 0 ? (
+            "Free"
+          ) : (
+            <>
+              {usd(sub.amount)}
+              <span className="ml-1 text-sm not-italic text-muted">/{cycleLabel(sub.cycle)}</span>
+            </>
+          )}
         </p>
         {sub.status === "cancelled" ? (
           <p className="text-[11px] uppercase tracking-[0.16em] text-muted">ended</p>

@@ -87,7 +87,8 @@ export function requestGoogleAccessToken(clientId: string, scope: string, prompt
           client_id: clientId,
           scope,
           callback: (res) => {
-            if (res.access_token) done(() => resolve(res.access_token));
+            const token = res.access_token;
+            if (token) done(() => resolve(token));
             else done(() => reject(new Error(res.error_description || res.error || "Google sign-in was cancelled.")));
           },
           error_callback: (err) => {

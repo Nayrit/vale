@@ -26,7 +26,9 @@ export default function InboxPage() {
     () => findings.filter((f) => selected[f.merchant.id] ?? true),
     [findings, selected],
   );
+  const freeCount = chosen.filter((f) => f.free || f.amount === 0).length;
   const monthly = chosen.reduce((sum, f) => {
+    if (f.free || f.amount === 0) return sum;
     if (f.cycle === "yearly") return sum + f.amount / 12;
     if (f.cycle === "weekly") return sum + f.amount * 4.345;
     return sum + f.amount;
@@ -96,10 +98,15 @@ export default function InboxPage() {
       {step === "ask" || step === "scan" ? (
         <div className="mt-10 rounded-[1.8rem] bg-white p-7 ring-1 ring-[#1a1713]/10">
           <ul className="grid gap-3 text-[15px] leading-relaxed text-[#1a1713]">
-            <li>Google will ask you to allow read-only access to Gmail for this same address.</li>
-            <li>Vale searches receipts and renewal mail from the last 18 months.</li>
-            <li>You see each charge — with a price if the mail had one, or a typical price if it did not.</li>
-            <li>You pick what to add. Cancel is one tap from the ledger.</li>
+            <li>
+              Vale keeps paid bills and free plans or trials — anything that looks like a membership, including $0 —
+              so you can cancel before it starts charging.
+            </li>
+            <li>Password mail, newsletters, and one-off store orders are ignored.</li>
+            <li>
+              Google will warn that Vale is not verified. That is Google’s screen for an unpublished app, not a Vale
+              virus. This project is running on your computer. If you continue, choose Advanced, then Go to Vale.
+            </li>
           </ul>
           {!gmailLike ? (
             <p className="mt-5 rounded-2xl bg-[#1a1713]/5 px-4 py-3 text-sm leading-relaxed text-[#1a1713]">
@@ -154,7 +161,7 @@ export default function InboxPage() {
           {findings.length === 0 ? (
             <div className="rounded-[1.6rem] bg-white p-6 ring-1 ring-[#1a1713]/10">
               <p className="leading-relaxed text-[#3d3830]">
-                No subscription receipts matched in this inbox. You can paste a statement or add a charge by hand.
+                No membership mail matched — paid or free. If something is missing, paste a statement or add it by hand.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button href="/import">Paste a statement</Button>
@@ -167,6 +174,7 @@ export default function InboxPage() {
             <>
               <p className="text-lg text-[#1a1713]">
                 {chosen.length} selected · {usd(monthly)} / month if they stay
+                {freeCount ? ` · ${freeCount} free` : ""}
               </p>
               <ul className="mt-6 grid gap-3">
                 {findings.map((f) => {
@@ -192,13 +200,24 @@ export default function InboxPage() {
                           <span className="block truncate text-sm text-[#3d3830]">{f.subject || f.from}</span>
                         </span>
                         <span className="text-right">
-                          <span className="serif block text-xl">
-                            {usd(f.amount)}
-                            <span className="ml-1 text-sm text-[#3d3830]">/{cycleLabel(f.cycle)}</span>
-                          </span>
-                          <span className="block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
-                            {f.estimated ? "typical price" : `${usd(yearly)} / year`}
-                          </span>
+                          {f.free || f.amount === 0 ? (
+                            <>
+                              <span className="serif block text-xl">Free</span>
+                              <span className="block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
+                                no charge yet
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="serif block text-xl">
+                                {usd(f.amount)}
+                                <span className="ml-1 text-sm text-[#3d3830]">/{cycleLabel(f.cycle)}</span>
+                              </span>
+                              <span className="block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
+                                {usd(yearly)} / year
+                              </span>
+                            </>
+                          )}
                         </span>
                       </button>
                     </li>
