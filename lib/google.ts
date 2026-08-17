@@ -74,29 +74,52 @@ export function requestGoogleAccessToken(clientId: string, scope: string, prompt
           clearTimeout(timer);
           fn();
         };
+        const origin = window.location.origin;
         const timer = window.setTimeout(() => {
           done(() =>
             reject(
               new Error(
-                `Google did not finish. In Google Cloud → Clients, add this exact origin (no trailing slash): ${window.location.origin}. Allow popups, then try again.`,
+                "Google’s window is still open or was blocked. Finish it if you see it — for an unverified app, click Advanced, then Go to Vale. Allow popups, then try again.",
               ),
             ),
           );
-        }, 25_000);
+        }, 180_000);
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope,
           callback: (res) => {
             const token = res.access_token;
             if (token) done(() => resolve(token));
-            else done(() => reject(new Error(res.error_description || res.error || "Google sign-in was cancelled.")));
+            else {
+              const raw = (res.error_description || res.error || "").toLowerCase();
+              if (raw.includes("origin") || raw.includes("redirect_uri") || raw.includes("invalid_request")) {
+                done(() =>
+                  reject(
+                    new Error(
+                      `Google blocked this site. In Google Cloud → Clients, Authorized JavaScript origins must include ${origin} with no trailing slash.`,
+                    ),
+                  ),
+                );
+                return;
+              }
+              done(() => reject(new Error(res.error_description || res.error || "Google sign-in was cancelled.")));
+            }
           },
           error_callback: (err) => {
             const type = err.type || "";
+            const msg = (err.message || "").toLowerCase();
             if (type === "popup_closed") done(() => reject(new Error("Google window was closed before finishing.")));
             else if (type === "popup_failed_to_open")
-              done(() => reject(new Error("The Google popup was blocked. Allow popups, then try again.")));
-            else done(() => reject(new Error(err.message || `Google sign-in failed. Add ${window.location.origin} as an Authorized JavaScript origin on the OAuth client.`)));
+              done(() => reject(new Error("The Google popup was blocked. Allow popups for localhost, then try again.")));
+            else if (msg.includes("origin") || type === "popup_failed")
+              done(() =>
+                reject(
+                  new Error(
+                    `Add this exact origin in Google Cloud → Clients (no trailing slash): ${origin}. Also add http://127.0.0.1:3000 if you use that address.`,
+                  ),
+                ),
+              );
+            else done(() => reject(new Error(err.message || "Google sign-in failed. Try Allow and scan again.")));
           },
         });
         client.requestAccessToken(prompt ? { prompt } : {});

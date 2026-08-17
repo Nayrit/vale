@@ -49,7 +49,8 @@ export function matchAccountMailbox(from: string): Merchant | null {
 
 const PRODUCT_SENDERS: [RegExp, string][] = [
   [/\bcursor\.com\b/i, "cursor"],
-  [/\banysphere\./i, "cursor"],
+  [/\bcursor\.sh\b/i, "cursor"],
+  [/\banysphere\b/i, "cursor"],
   [/\banthropic\.com\b/i, "claude"],
   [/\bclaude\.ai\b/i, "claude"],
   [/\bopenai\.com\b/i, "chatgpt"],
@@ -108,7 +109,7 @@ const RECURRING =
 const SHIPPING = /\b(shipped|out for delivery|tracking number|on the way|has been delivered)\b/i;
 
 const SUBJECT_RECEIPT =
-  /\b(your receipt|receipt from|invoice from|payment receipt|google payment|you(?:'ve| have) been charged)\b/i;
+  /\b(your receipt|receipt from|invoice from|invoice #|invoice number|payment receipt|google payment|you(?:'ve| have) been charged)\b/i;
 
 export function hasBillingEvidence(from: string, subject: string, blob: string) {
   return BILLING_EVIDENCE.test(`${from}\n${subject}\n${blob}`);
@@ -142,8 +143,9 @@ export function isPaymentCandidate(headers: MailHeaders, blob: string) {
   const stripe = isStripeSender(headers.from);
   const googlePay = isGoogleBillingSender(headers.from);
   const processor = isBillingProcessor(headers.from);
+  const vendor = matchProductSender(headers.from);
   const billing = hasBillingEvidence(headers.from, headers.subject, blob) || SUBJECT_RECEIPT.test(headers.subject);
-  return stripe || googlePay || (processor && billing) || SUBJECT_RECEIPT.test(headers.subject);
+  return stripe || googlePay || (processor && billing) || SUBJECT_RECEIPT.test(headers.subject) || (vendor && billing);
 }
 
 /** @deprecated use isPaymentCandidate — kept so older calls still compile during the cutover */
@@ -212,7 +214,7 @@ export function matchInboxMerchant(from: string, subject: string, body: string) 
   if (fromMatch.merchant && fromMatch.confidence >= 0.62) return fromMatch;
 
   if (isStripeSender(from)) {
-    const near = matchDescriptor(`${from} ${subject} ${body.slice(0, 600)}`);
+    const near = matchDescriptor(`${from} ${subject} ${body.slice(0, 4000)}`);
     if (near.merchant && near.confidence >= 0.62) return near;
   }
 
@@ -245,7 +247,8 @@ export function isLocalCurrency(text: string) {
 
 export function amountFitsCatalog(amount: number, typical: number) {
   if (typical <= 0) return true;
-  return amount <= typical * 4 && amount >= typical * 0.2;
+  if (amount <= typical * 4 && amount >= typical * 0.2) return true;
+  return amount <= typical * 16 && amount >= typical * 8;
 }
 
 const SUBJECT_WATCH: [RegExp, string][] = [
@@ -253,7 +256,7 @@ const SUBJECT_WATCH: [RegExp, string][] = [
   [/\bgemini advanced\b|\bgoogle ai pro\b|\bgoogle ai plus\b|\bgoogle gemini\b/i, "gemini"],
   [/\bchatgpt\b|\bopenai\b/i, "chatgpt"],
   [/\bclaude\b|\banthropic\b/i, "claude"],
-  [/\bcursor pro\b|\bcursor\.com\b|\banysphere\b/i, "cursor"],
+  [/\bcursor pro\b|\bcursor\.com\b|\bcursor\.sh\b|\banysphere\b/i, "cursor"],
   [/\byoutube premium\b|\byoutube music premium\b/i, "youtube-premium"],
   [/\bspotify\b/i, "spotify"],
   [/\bnetflix\b/i, "netflix"],

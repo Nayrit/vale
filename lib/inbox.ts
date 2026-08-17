@@ -206,6 +206,7 @@ function mustFetchQueries() {
   return [
     "newer_than:36m from:stripe.com",
     "newer_than:36m from:invoice.stripe.com",
+    "newer_than:36m from:(cursor.com OR anysphere.com OR cursor.sh)",
     "newer_than:36m from:(paypal.com OR paddle.com OR chargebee.com)",
     "newer_than:36m from:(payments-noreply@google.com OR googleone-noreply@google.com)",
     'newer_than:36m (subject:"Receipt from" OR subject:"Your receipt" OR subject:"Invoice from" OR subject:"Google payment" OR subject:subscription)',
@@ -326,10 +327,10 @@ export async function scanGmailInbox(
         const last = dollars.at(-1)?.[1];
         if (last) {
           const n = Number(last.replace(/,/g, ""));
-          if (Number.isFinite(n) && n >= 0.5 && n < 200) parsed = n;
+          if (Number.isFinite(n) && n >= 0.5 && n < 5000) parsed = n;
         }
       }
-      const amount = parsed != null && parsed >= 0.5 && parsed < 200 && !local ? parsed : 0;
+      const amount = parsed != null && parsed >= 0.5 && parsed < 5000 && !local ? parsed : 0;
       const oneTime =
         isOneTimePurchase(subject, blob) ||
         (merchant?.id === "chatgpt" &&

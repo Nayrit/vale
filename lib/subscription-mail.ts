@@ -19,7 +19,7 @@
  */
 
 import type { BillingCycle, Merchant } from "./types";
-import { amountFitsCatalog } from "./inbox-match";
+import { amountFitsCatalog, isBillingProcessor, isStripeSender } from "./inbox-match";
 
 export type ChargeEvent = {
   merchant: Merchant | null;
@@ -83,12 +83,15 @@ export function selectSubscriptions(events: ChargeEvent[]): ChargeEvent[] {
     const priced = list.some(
       (e) => e.merchant && e.amount > 0 && amountFitsCatalog(e.amount, e.merchant.typicalPrice),
     );
+    const processorPaid = list.some(
+      (e) => e.merchant && e.amount > 0 && (isStripeSender(e.from) || isBillingProcessor(e.from)),
+    );
 
     if (recurring || repeats) {
       kept.push(bestEvent(list));
       continue;
     }
-    if (catalog && priced) {
+    if (catalog && (priced || processorPaid)) {
       kept.push(bestEvent(list));
     }
   }

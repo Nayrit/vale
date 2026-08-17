@@ -54,7 +54,7 @@ export default function InboxPage() {
       const token = await requestGoogleAccessToken(
         clientId,
         `email profile openid ${GMAIL_READONLY_SCOPE}`,
-        "consent",
+        "",
       );
       const profile = await googleUserInfo(token);
       if (profile.email.trim().toLowerCase() !== email.trim().toLowerCase()) {
@@ -333,7 +333,9 @@ export default function InboxPage() {
                 Named in mail, not a bill
               </p>
               <p className="mt-2 text-sm leading-relaxed text-[#3d3830]">
-                Mail named these. There was no charge Vale could prove — sign-in, marketing, or a one-off receipt.
+                Mail named these. There was no charge Vale could prove — sign-in, marketing, or a missing receipt.
+                Cursor often bills the card through Stripe without emailing a receipt (Claude does). Add the ones you
+                actually pay for, with the amount on the card.
               </p>
               <ul className="mt-5 grid gap-3">
                 {mentions.map((m) => (
@@ -346,6 +348,9 @@ export default function InboxPage() {
                       <span className="block font-medium">{m.name}</span>
                       <span className="block truncate text-sm text-[#3d3830]">{m.subject || m.from}</span>
                     </span>
+                    <Button href={`/add?merchant=${m.merchantId}`} kind="ghost" className="shrink-0 px-4 py-2 text-sm">
+                      Add
+                    </Button>
                   </li>
                 ))}
               </ul>
