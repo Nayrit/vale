@@ -109,29 +109,34 @@ function getServerSnapshot() {
 }
 
 function applyImport(s: AppState, matches: StatementMatch[]) {
-  const incoming = matches.filter((m) => m.merchant && m.amount != null);
+  const incoming = matches.filter((m) => m.amount != null);
   const have = new Set(
-    s.subscriptions.filter((sub) => sub.status !== "cancelled" && sub.merchantId).map((sub) => sub.merchantId),
+    s.subscriptions
+      .filter((sub) => sub.status !== "cancelled")
+      .map((sub) => sub.merchantId || sub.name.trim().toLowerCase()),
   );
   const next = [...s.subscriptions];
   let added = 0;
   for (const match of incoming) {
-    const merchant = match.merchant!;
-    if (have.has(merchant.id)) continue;
-    have.add(merchant.id);
+    const merchant = match.merchant;
+    const name = merchant?.name || match.descriptor || "Unknown charge";
+    const key = merchant?.id || name.trim().toLowerCase();
+    if (have.has(key)) continue;
+    have.add(key);
     added += 1;
+    const cycle = merchant?.cycle ?? "monthly";
     next.unshift({
       id: uid(),
-      merchantId: merchant.id,
-      name: merchant.name,
+      merchantId: merchant?.id ?? null,
+      name,
       amount: match.amount!,
-      cycle: merchant.cycle,
+      cycle,
       lastUsedAt: null,
       startedAt: new Date().toISOString(),
-      nextChargeAt: daysFromNowIso(merchant.cycle === "yearly" ? 365 : 30),
+      nextChargeAt: daysFromNowIso(cycle === "yearly" ? 365 : cycle === "weekly" ? 7 : 30),
       status: "active",
       bankDescriptor: match.descriptor,
-      source: "statement" as const,
+      source: "statement",
     });
   }
   return { state: { ...s, subscriptions: next }, added };

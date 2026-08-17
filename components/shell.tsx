@@ -20,7 +20,7 @@ const links = [
 const AUTH_ROUTES = new Set(["/login", "/signup", "/forgot"]);
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { ready, state } = useStore();
+  const { ready } = useStore();
   const auth = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -46,9 +46,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (!auth.ready) return;
     if (!auth.user && !isAuthRoute) router.replace("/login");
     if (auth.user && isAuthRoute) {
-      router.replace(state.inboxPrompt === "pending" ? "/inbox" : "/");
+      router.replace("/");
     }
-  }, [auth.ready, auth.user, isAuthRoute, router, state.inboxPrompt]);
+  }, [auth.ready, auth.user, isAuthRoute, router]);
 
   if (!ready || !auth.ready) {
     return (

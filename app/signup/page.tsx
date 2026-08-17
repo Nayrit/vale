@@ -37,7 +37,7 @@ export default function SignupPage() {
     <AuthFrame
       kicker="New ledger"
       title="Create an account"
-      lede="Use a real email. After you create the account, Vale asks permission to find subscriptions in that inbox."
+      lede="Use a real email. After you create the account, paste a bank statement or add charges by hand. Gmail scan is optional."
     >
       <GoogleButton label="Sign up with Google" onError={setError} onBusy={setBusy} />
       <OrLine />

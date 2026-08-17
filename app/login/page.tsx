@@ -31,7 +31,7 @@ export default function LoginPage() {
     <AuthFrame
       kicker="Welcome back"
       title="Sign in"
-      lede="Sign in with the email you actually use. Vale will then ask to look for subscriptions in that inbox."
+      lede="Sign in with the email you actually use. Then paste a statement, add a charge, or optionally scan Gmail for billed receipts."
     >
       <GoogleButton label="Continue with Google" onError={setError} onBusy={setBusy} />
       <OrLine />

@@ -2,9 +2,9 @@
 
 Your bank statement names the charge. It never names the door.
 
-Vale is a subscription steward: it finds charges billed to your email (if you allow it), matches ugly bank descriptors to the real cancel page, names the dark patterns in advance, and records the money you keep.
+Vale is a subscription steward: paste a statement (or add a charge by hand), match ugly bank descriptors to the real cancel page, name the dark patterns in advance, and record the money you keep. Gmail scan is optional proof of mailed recurring bills — not a complete list of every subscription on the account.
 
-There is no Vale server and no database. Accounts and the ledger live in this browser.
+There is no Vale server and no database. Accounts and the ledger live in this browser. Nothing costs money to run.
 
 ## Run it
 
@@ -54,16 +54,19 @@ Allow popups for localhost. Sign-in opens a second window.
 
 ## What works
 
-- **Accounts** — email + password or Google, stored in this browser. Forgot-password is a device code, not email.
-- **Inbox scan** — after login, Vale asks permission. It does not read mail until you allow it. Then it searches Gmail receipts and renewals for that same address and lists charges you can add or cancel. Outlook, Yahoo, and iCloud cannot be scanned this way.
-- **Statement paste** — match `NETFLIX.COM`, `APPLE.COM/BILL`, `PLANET FITNESS` to the actual management portal
+- **Accounts** — email + password or Google, stored in this browser. Forgot-password is a device code, not email. No Vale server, no paid API.
+- **Statement paste** — the free complete path. Match `NETFLIX.COM`, `APPLE.COM/BILL`, `PLANET FITNESS` to the cancel portal. One-time shop lines stay off the ledger unless you check them.
+- **Inbox scan** — optional. After you allow Gmail readonly, Vale lists proven recurring bills (Stripe / PayPal / Google payments, repeats, or recurring language). It does not invent a catalog price. Outlook, Yahoo, and iCloud cannot be scanned this way.
+- **Add by hand** — search the catalog or type a custom name.
 - **Cancel walks** — honest difficulty, trap warnings, official cancel URLs, a checklist, then “I cancelled”
 - **Quiet detection** — unused for 60+ days rises to the top
-- **Kept** — first-year savings, plus Free / Plus ($6) / Share (15% of savings)
+- **Kept** — first-year savings. Plus / Share are labels on this device and never charge you.
 
 ## Limits
 
 - Data stays on this machine and this browser. Clearing site data wipes the ledger.
+- Gmail cannot list “every subscription on this account.” Deleted mail is gone. Charges that never emailed this address will not appear.
+- A live bank connection (Plaid and the like) would be more complete and costs money. Vale does not use it.
 - Inbox scan needs a Google mailbox (Gmail or Google Workspace) and your explicit allow.
 - No backend, so no sync across devices until you add a database.
 

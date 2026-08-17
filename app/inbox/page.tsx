@@ -124,8 +124,13 @@ export default function InboxPage() {
   }
 
   function addChosen() {
+    const billed = chosen.filter((f) => f.amount > 0 && !f.estimated);
+    if (billed.length === 0) {
+      toast("Select a billed subscription, or paste a statement.");
+      return;
+    }
     const n = importInbox(
-      chosen.map((f) => ({
+      billed.map((f) => ({
         merchantId: f.merchant?.id ?? null,
         name: f.name,
         amount: f.amount,
@@ -142,32 +147,32 @@ export default function InboxPage() {
       <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Your inbox</p>
       <h1 className="serif mt-3 text-5xl leading-tight">What this inbox holds</h1>
       <p className="mt-4 text-lg leading-relaxed text-[#3d3830]">
-        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale lists
-        subscriptions — recurring charges. A one-time purchase, a shop receipt, or a sign-in is not a subscription.
+        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. This is optional.
+        A bank statement is the complete list of what left the account. Inbox scan only adds a charge when Gmail
+        proves a recurring bill — Stripe receipt, Google payment, the same merchant twice. Not newsletters, not
+        shop receipts, not a guessed $20.
       </p>
 
       {step === "ask" || step === "scan" ? (
         <div className="mt-10 rounded-[1.8rem] bg-white p-7 ring-1 ring-[#1a1713]/10">
           <ul className="grid gap-3 text-[15px] leading-relaxed text-[#1a1713]">
             <li>
-              On a mailbox of about 1,500 messages or fewer, Vale reads every message. On a larger one it pages
-              through three years of Stripe, PayPal, Apple, Google payments, and mail from Cursor, Claude, ChatGPT,
-              and the rest of the watchlist.
+              Vale looks for payment mail: Stripe, PayPal, Apple, Google payments, and subjects like “Your receipt.”
+              A brand named in a newsletter does not become a subscription.
             </li>
             <li>
-              Google does not give Vale a list of “every subscription on this Gmail.” Cursor, Claude, Netflix and the
-              rest only show up if they emailed this address — All Mail and Trash included, not only the inbox.
+              Google does not give Vale a list of every subscription on this Gmail. Deleted-forever mail is gone.
+              A charge that never emailed this address will not appear — paste a statement for those.
             </li>
             <li>
-              You have = a recurring bill Vale can prove: the mail says subscription / auto-renew / billing period, or
-              the same merchant charged more than once, or a known membership (Cursor, Claude, Netflix…) with a real
-              payment that is not a one-off. A single shop receipt is a purchase, not a sub.
+              A subscription is proven mail: recurring language, the same merchant charged twice ≥ 20 days apart, or
+              a known membership with a real payment that is not a one-off shop receipt. Vale never invents a typical
+              $20.
             </li>
-            <li>Password mail, newsletters, and one-off store orders are ignored.</li>
+            <li>Password mail, newsletters, ToS updates, and one-off store orders are ignored.</li>
             <li>
-              Google will warn that Vale is not verified yet. That is Google’s screen for an unpublished app. If you
-              continue, choose Advanced, then Go to Vale. Add this Gmail under Google Cloud → Audience → Test users or
-              Google will block it.
+              Google will warn that Vale is not verified yet. Continue → Advanced → Go to Vale. Add this Gmail under
+              Google Cloud → Audience → Test users or Google will block it. That setup is free.
             </li>
           </ul>
           {!gmailLike ? (
@@ -301,11 +306,7 @@ export default function InboxPage() {
                                 <span className="ml-1 text-sm text-[#3d3830]">/{cycleLabel(f.cycle)}</span>
                               </span>
                               <span className="block text-[11px] uppercase tracking-[0.14em] text-[#3d3830]">
-                                {f.kind === "account"
-                                  ? "typical — set what you pay"
-                                  : f.estimated
-                                    ? "typical price"
-                                    : `${usd(yearly)} / year`}
+                                {usd(yearly)} / year
                               </span>
                             </>
                           )}

@@ -48,14 +48,15 @@ export function matchDescriptor(descriptor: string) {
 }
 
 export function parseStatement(text: string): StatementMatch[] {
-  return text
+  const rows = text
     .split(/\n+/)
     .map((raw) => raw.trim())
     .filter((raw) => raw.length > 2 && !raw.startsWith("#"))
+    .filter((raw) => !/^(date|posted|description|amount|merchant|details|transaction)\b/i.test(raw))
     .map((raw) => {
       const amount = parseAmount(raw);
       const date = parseDate(raw);
-      let descriptor = raw;
+      let descriptor = raw.replace(/,/g, " ");
       if (date) descriptor = descriptor.replace(date, " ");
       if (amount != null) {
         descriptor = descriptor.replace(new RegExp(`\\$?${amount.toFixed(2).replace(".", "\\.")}`), " ");
@@ -63,8 +64,23 @@ export function parseStatement(text: string): StatementMatch[] {
       }
       descriptor = descriptor.replace(/[|$]/g, " ").replace(/\s+/g, " ").trim();
       const { merchant, confidence } = matchDescriptor(descriptor);
-      return { raw, descriptor, amount, date, merchant, confidence };
+      return { raw, descriptor, amount, date, merchant, confidence, kind: "purchase" as const };
     });
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.merchant?.id || normalize(row.descriptor).slice(0, 28);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return rows.map((row) => {
+    const key = row.merchant?.id || normalize(row.descriptor).slice(0, 28);
+    const repeats = (counts.get(key) ?? 0) >= 2;
+    const kind: StatementMatch["kind"] =
+      row.merchant && row.amount != null ? "subscription" : repeats && row.amount != null ? "subscription" : "purchase";
+    return { ...row, kind };
+  });
 }
 
 export const SAMPLE_STATEMENT = `08/01 NETFLIX.COM 17.99
@@ -82,4 +98,6 @@ export const SAMPLE_STATEMENT = `08/01 NETFLIX.COM 17.99
 08/14 AMAZON PRIME 14.99
 08/15 CALM.COM 69.99
 08/16 GOOGLE ONE 2.99
-08/17 GOOGLE AI PRO 19.99`;
+08/17 GOOGLE AI PRO 19.99
+08/18 AMAZON MKTPLACE 47.23
+08/19 VW GULSHAN 12.50`;

@@ -98,4 +98,5 @@ export type StatementMatch = {
   date: string | null;
   merchant: Merchant | null;
   confidence: number;
+  kind: "subscription" | "purchase";
 };

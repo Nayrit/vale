@@ -47,14 +47,14 @@ export default function HomePage() {
       {state.inboxPrompt !== "allowed" && active.length > 0 ? (
         <div className="rise-3 mt-10 rounded-[1.8rem] bg-white p-6 ring-1 ring-[#1a1713]/10 sm:flex sm:items-center sm:justify-between sm:gap-6">
           <div>
-            <p className="serif text-2xl italic">Look in the inbox?</p>
+            <p className="serif text-2xl italic">Optional: billed mail</p>
             <p className="mt-2 max-w-lg text-[15px] leading-relaxed text-[#3d3830]">
-              Vale can search billing mail for this account and put every charge it finds on the ledger — with a price, or
-              marked as typical if the receipt had no amount.
+              Vale can look for Stripe, PayPal, and Google payment receipts in this Gmail. It only adds a charge when
+              the mail proves a recurring bill — never a guessed catalog price.
             </p>
           </div>
           <Button href="/inbox" className="mt-4 shrink-0 sm:mt-0">
-            Allow inbox access
+            Scan inbox
           </Button>
         </div>
       ) : null}
@@ -109,17 +109,16 @@ export default function HomePage() {
         <div className="mt-16 rounded-[2rem] bg-white p-10 ring-1 ring-[#1a1713]/10">
           <p className="serif text-4xl italic">A quiet ledger</p>
           <p className="mx-auto mt-4 max-w-lg text-[15px] leading-relaxed text-[#3d3830]">
-            {state.inboxPrompt === "skipped"
-              ? "You skipped inbox access. You can still allow it, paste a statement, or add a charge by hand."
-              : "If you allow it, Vale will look through this inbox for receipts and show what still costs you — then you can keep or cancel each one."}
+            Start with a bank or card statement — that is the free, complete list of what actually left the account.
+            Inbox scan is optional proof of mailed bills. You can also add one by hand.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button href="/inbox">{state.inboxPrompt === "allowed" ? "Scan inbox again" : "Allow inbox access"}</Button>
-            <Button href="/import" kind="ghost">
-              Paste a statement
-            </Button>
+            <Button href="/import">Paste a statement</Button>
             <Button href="/add" kind="ghost">
               Add one by hand
+            </Button>
+            <Button href="/inbox" kind="ghost">
+              {state.inboxPrompt === "allowed" ? "Scan inbox again" : "Scan Gmail (optional)"}
             </Button>
           </div>
         </div>

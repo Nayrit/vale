@@ -23,7 +23,7 @@ export default function CatalogPage() {
         <span className="italic text-moss"> — on purpose.</span>
       </h1>
       <p className="mt-5 max-w-xl text-lg text-muted">
-        Forty doors, with the dark patterns named in advance. Difficulty is honest. Gyms are hostile because they are.
+        Forty-five doors, with the dark patterns named in advance. Difficulty is honest. Gyms are hostile because they are.
       </p>
 
       <input

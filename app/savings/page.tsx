@@ -21,9 +21,8 @@ export default function SavingsPage() {
         </span>
       </h1>
       <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
-        Vale does not take money from the companies you leave. It stays alive
-        if people keep using it — a quiet $6, or a share of documented
-        first-year savings.
+        Vale never bills you. Plans below are labels on this device — Free is the whole product. Plus and Share do
+        not take a payment; they only change how unused days are counted on this browser.
       </p>
 
       <div className="mt-10 grid gap-3 sm:grid-cols-3">
@@ -71,14 +70,14 @@ export default function SavingsPage() {
           <PlanCard
             name="Free"
             price="Nothing"
-            body="Ledger, statement matching, every door, and the cancel walk."
+            body="Ledger, statement matching, inbox scan, every door, and the cancel walk. No payment."
             current={state.plan === "free"}
             onPick={() => setPlan("free")}
           />
           <PlanCard
             name="Plus"
             price="$6 / month"
-            body="Tighten when unused becomes a problem. A year of Plus is usually less than one forgotten gym."
+            body="On this device only. Tighten when unused becomes a problem. Nothing is charged."
             current={state.plan === "plus"}
             onPick={() => setPlan("plus")}
           />
@@ -87,8 +86,8 @@ export default function SavingsPage() {
             price="15% of year one"
             body={
               yearly > 0
-                ? `On what you have already kept, Vale would take ${usd(fee)}. You keep ${usd(yearly - fee)}.`
-                : "After you cancel, Vale would take 15% of the first year’s documented savings."
+                ? `A label only: Vale would show ${usd(fee)} as 15% of year one. Nothing is charged. You keep the full ${usd(yearly)}.`
+                : "A label only. After you cancel, Vale would show 15% of year one. Nothing is charged."
             }
             current={state.plan === "share"}
             onPick={() => setPlan("share")}
@@ -101,7 +100,7 @@ export default function SavingsPage() {
         <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
           {state.plan === "plus" || state.plan === "share"
             ? "You can decide when unused becomes a problem."
-            : "Free watches for 60 days of silence. Plus lets you change that — picking another window starts Plus on this device."}
+            : "Free watches for 60 days of silence. Changing the window labels this device Plus — still no payment."}
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           {[30, 45, 60, 90].map((n) => (
