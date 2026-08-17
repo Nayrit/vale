@@ -132,35 +132,23 @@ export function isNewsletter(headers: MailHeaders, blob: string) {
   return !!headers.listUnsubscribe || !!headers.listId || /bulk|list/i.test(headers.precedence);
 }
 
-export function isMembershipMail(headers: MailHeaders, blob: string) {
+export function isPaymentCandidate(headers: MailHeaders, blob: string) {
   if (isSignInOrMarketing(headers.subject)) return false;
-  if (
-    isPolicyMail(headers.subject, blob) &&
-    !isStripeSender(headers.from) &&
-    !SUBJECT_RECEIPT.test(headers.subject)
-  ) {
+  if (isPolicyMail(headers.subject, blob) && !SUBJECT_RECEIPT.test(headers.subject) && !isStripeSender(headers.from)) {
     return false;
   }
-  if (SHIPPING.test(headers.subject) && !hasBillingEvidence(headers.from, headers.subject, blob)) {
-    return false;
-  }
-  if (isNewsletter(headers, blob)) return false;
+  if (SHIPPING.test(headers.subject)) return false;
 
-  const catalog =
-    matchDescriptor(headers.subject).merchant ||
-    matchDescriptor(headers.from).merchant ||
-    matchProductSender(headers.from);
-  const billing = hasBillingEvidence(headers.from, headers.subject, blob) || SUBJECT_RECEIPT.test(headers.subject);
-  const recurring = RECURRING.test(`${headers.subject}\n${blob.slice(0, 2500)}`);
   const stripe = isStripeSender(headers.from);
   const googlePay = isGoogleBillingSender(headers.from);
   const processor = isBillingProcessor(headers.from);
+  const billing = hasBillingEvidence(headers.from, headers.subject, blob) || SUBJECT_RECEIPT.test(headers.subject);
+  return stripe || googlePay || (processor && billing) || SUBJECT_RECEIPT.test(headers.subject);
+}
 
-  if (googlePay && billing) return true;
-  if (stripe && catalog && billing) return true;
-  if (processor && catalog && billing && recurring) return true;
-  if (catalog && billing && recurring) return true;
-  return false;
+/** @deprecated use isPaymentCandidate — kept so older calls still compile during the cutover */
+export function isMembershipMail(headers: MailHeaders, blob: string) {
+  return isPaymentCandidate(headers, blob);
 }
 
 export function matchGoogleProduct(from: string, subject: string, body: string): Merchant | null {
@@ -257,7 +245,7 @@ export function isLocalCurrency(text: string) {
 
 export function amountFitsCatalog(amount: number, typical: number) {
   if (typical <= 0) return true;
-  return amount <= typical * 6 && amount >= typical * 0.15;
+  return amount <= typical * 4 && amount >= typical * 0.2;
 }
 
 const SUBJECT_WATCH: [RegExp, string][] = [

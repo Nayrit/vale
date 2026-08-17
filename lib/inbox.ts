@@ -5,15 +5,18 @@ import {
   parseLocalAmount,
   htmlToText,
   isLocalCurrency,
-  isMembershipMail,
-  hasBillingEvidence,
-  amountFitsCatalog,
+  isPaymentCandidate,
   watchlistHits,
-  isPolicyMail,
   isStripeSender,
   isSignInOrMarketing,
   type MailHeaders,
 } from "./inbox-match";
+import {
+  isOneTimePurchase,
+  isRecurringLanguage,
+  selectSubscriptions,
+  type ChargeEvent,
+} from "./subscription-mail";
 import type { BillingCycle, Merchant } from "./types";
 
 export type InboxFinding = {
@@ -203,8 +206,9 @@ function mustFetchQueries() {
   return [
     "newer_than:36m from:stripe.com",
     "newer_than:36m from:invoice.stripe.com",
-    'newer_than:36m (subject:"Receipt from" OR subject:"Invoice from" OR subject:"Your receipt")',
-    "newer_than:36m from:(cursor.com OR anysphere.com OR anthropic.com OR claude.ai OR openai.com OR chatgpt.com)",
+    "newer_than:36m from:(paypal.com OR paddle.com OR chargebee.com)",
+    "newer_than:36m from:(payments-noreply@google.com OR googleone-noreply@google.com)",
+    'newer_than:36m (subject:"Receipt from" OR subject:"Your receipt" OR subject:"Invoice from" OR subject:"Google payment" OR subject:subscription)',
   ];
 }
 
@@ -243,7 +247,7 @@ export async function scanGmailInbox(
   const readAll = firstComplete || estimate <= FULL_READ_IF_AT_MOST;
 
   const mustIds = new Set<string>();
-  onProgress?.({ done: 0, total: 1, phase: "Finding Stripe and product mail" });
+  onProgress?.({ done: 0, total: 1, phase: "Finding payment mail" });
   for (const q of mustFetchQueries()) {
     const extra = await listAllIds(token, q, 250);
     extra.ids.forEach((id) => mustIds.add(id));
@@ -282,9 +286,9 @@ export async function scanGmailInbox(
   }
 
   const cap = readAll ? FULL_READ_CAP : BILLING_CAP;
-  const rest = [...ids].filter((id) => !mustIds.has(id));
-  const list = [...mustIds, ...rest].slice(0, Math.max(cap, mustIds.size));
-  const findings = new Map<string, InboxFinding>();
+  const restIds = [...ids].filter((id) => !mustIds.has(id));
+  const list = [...mustIds, ...restIds].slice(0, Math.max(cap, mustIds.size));
+  const charges: ChargeEvent[] = [];
   const mentions = new Map<string, InboxMention>();
   onProgress?.({ done: 0, total: list.length || 1, phase: "Reading messages" });
 
@@ -297,19 +301,16 @@ export async function scanGmailInbox(
       const headers = mailHeaders(msg);
       const from = headers.from;
       const subject = headers.subject;
-      const dateHdr = header(msg, "Date");
       const texts: string[] = [from, subject, msg.snippet ?? ""];
       await collectText(token, msg.id, msg.payload, texts);
       const blob = texts.join(" \n ").slice(0, 24000);
-      const named = watchlistHits(from, subject);
-      const policy = isPolicyMail(subject, blob) && !isStripeSender(from);
-      if (isSignInOrMarketing(subject) || policy || !isMembershipMail(headers, blob)) {
+      const dateMs = msg.internalDate ? Number(msg.internalDate) : Date.parse(header(msg, "Date") || "") || 0;
+
+      if (isSignInOrMarketing(subject) || !isPaymentCandidate(headers, blob)) {
         if (!isSignInOrMarketing(subject)) {
-          for (const m of named) {
+          for (const m of watchlistHits(from, subject)) {
             if (!(INBOX_WATCHLIST_IDS as readonly string[]).includes(m.id)) continue;
-            if (!mentions.has(m.id)) {
-              mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
-            }
+            if (!mentions.has(m.id)) mentions.set(m.id, { merchantId: m.id, name: m.name, from, subject });
           }
         }
         continue;
@@ -320,7 +321,6 @@ export async function scanGmailInbox(
       const name = merchant?.name || displayName(from, subject);
       let parsed = parseChargeAmount(blob);
       const local = isLocalCurrency(blob);
-      const localMoney = parseLocalAmount(blob);
       if (parsed == null && isStripeSender(from) && !local) {
         const dollars = [...blob.matchAll(/\$\s*(\d{1,4}(?:,\d{3})*\.\d{2})/g)];
         const last = dollars.at(-1)?.[1];
@@ -329,37 +329,52 @@ export async function scanGmailInbox(
           if (Number.isFinite(n) && n >= 0.5 && n < 200) parsed = n;
         }
       }
-      const parsedUsd = parsed != null && parsed >= 0.5 && parsed < 200 && !local;
-      const paidUsd =
-        parsedUsd && (!merchant || amountFitsCatalog(parsed!, merchant.typicalPrice));
-      const billing = hasBillingEvidence(from, subject, blob) || isStripeSender(from);
-      const cycle = guessCycle(blob, merchant?.cycle ?? "monthly");
+      const amount = parsed != null && parsed >= 0.5 && parsed < 200 && !local ? parsed : 0;
+      const oneTime =
+        isOneTimePurchase(subject, blob) ||
+        (merchant?.id === "chatgpt" &&
+          /\b(api|credits|usage)\b/i.test(blob) &&
+          !/\b(chatgpt plus|chatgpt pro|plus plan)\b/i.test(`${subject}\n${blob.slice(0, 1500)}`));
 
-      if (!merchant) continue;
-      if (!paidUsd && !billing) continue;
-
-      const next: InboxFinding = {
-        key: findingKey(merchant, name),
+      charges.push({
         merchant,
         name,
-        amount: paidUsd ? parsed! : 0,
-        estimated: false,
-        free: false,
-        cycle,
+        amount,
+        cycle: guessCycle(blob, merchant?.cycle ?? "monthly"),
         from,
         subject,
-        date: dateHdr || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : null),
-        confidence: matched.confidence,
-        kind: "receipt",
-        localLabel: local && localMoney ? localMoney.label : null,
-      };
-      findings.set(next.key, keepFinding(findings.get(next.key), next));
+        dateMs,
+        recurring: isRecurringLanguage(subject, blob),
+        oneTime,
+      });
     }
     onProgress?.({
       done: Math.min(i + chunk.length, list.length),
       total: list.length || 1,
       phase: "Reading messages",
     });
+  }
+
+  const findings = new Map<string, InboxFinding>();
+  for (const event of selectSubscriptions(charges)) {
+    const key = findingKey(event.merchant, event.name);
+    const local = parseLocalAmount(event.subject);
+    const next: InboxFinding = {
+      key,
+      merchant: event.merchant,
+      name: event.name,
+      amount: event.amount,
+      estimated: false,
+      free: false,
+      cycle: event.cycle,
+      from: event.from,
+      subject: event.subject,
+      date: event.dateMs ? new Date(event.dateMs).toISOString() : null,
+      confidence: event.recurring ? 0.9 : 0.75,
+      kind: "receipt",
+      localLabel: local?.label ?? null,
+    };
+    findings.set(key, keepFinding(findings.get(key), next));
   }
 
   const foundIds = new Set(

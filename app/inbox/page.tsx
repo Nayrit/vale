@@ -142,9 +142,8 @@ export default function InboxPage() {
       <p className="text-[12px] font-medium uppercase tracking-[0.22em] text-[#3d3830]">Your inbox</p>
       <h1 className="serif mt-3 text-5xl leading-tight">What this inbox holds</h1>
       <p className="mt-4 text-lg leading-relaxed text-[#3d3830]">
-        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale lists charges
-        it can prove — a Stripe/Google/Apple receipt with an amount. A sign-in, a “Meet Claude” mail, or a shop
-        receipt is not a subscription.
+        Signed in as <span className="font-medium text-[#1a1713]">{email || "your address"}</span>. Vale lists
+        subscriptions — recurring charges. A one-time purchase, a shop receipt, or a sign-in is not a subscription.
       </p>
 
       {step === "ask" || step === "scan" ? (
@@ -160,8 +159,9 @@ export default function InboxPage() {
               rest only show up if they emailed this address — All Mail and Trash included, not only the inbox.
             </li>
             <li>
-              Once Vale sees a receipt, it remembers it on this device. Deleting the email later will not wipe it here.
-              Add to ledger to keep it on the home screen.
+              You have = a recurring bill Vale can prove: the mail says subscription / auto-renew / billing period, or
+              the same merchant charged more than once, or a known membership (Cursor, Claude, Netflix…) with a real
+              payment that is not a one-off. A single shop receipt is a purchase, not a sub.
             </li>
             <li>Password mail, newsletters, and one-off store orders are ignored.</li>
             <li>
